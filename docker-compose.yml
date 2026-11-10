@@ -1,0 +1,22 @@
+# Local development dependencies. Start with: docker compose up -d
+# Credentials below are throwaway local-only defaults; real ones come from AWS Secrets Manager.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17
+    container_name: triode-postgres
+    environment:
+      POSTGRES_DB: triode
+      POSTGRES_USER: ${DB_USERNAME:-triode}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-triode}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

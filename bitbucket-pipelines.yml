@@ -1,0 +1,27 @@
+# CI for Triode (plan §7.4). For now only pull requests run a pipeline; merge-to-main
+# and tag deployments are added once the AWS infrastructure exists.
+# Free plan: 50 build minutes/month, so run `./mvnw verify` locally before pushing.
+image: maven:3.9-eclipse-temurin-25
+
+definitions:
+  caches:
+    maven-wrapper: ~/.m2/wrapper
+  services:
+    docker:
+      memory: 2048
+  steps:
+    - step: &test
+        name: Build and test
+        caches: [maven, maven-wrapper]
+        services: [docker]
+        script:
+          # Testcontainers' cleanup container (Ryuk) cannot run on Bitbucket's restricted Docker.
+          - export TESTCONTAINERS_RYUK_DISABLED=true
+          - cd backend && ./mvnw -B verify
+        artifacts:
+          - backend/target/site/jacoco/**
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *test

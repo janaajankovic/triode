@@ -1,0 +1,45 @@
+### Java / Maven ###
+target/
+*.class
+*.log
+hs_err_pid*
+.mvn/wrapper/maven-wrapper.jar
+
+### IDEs ###
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated
+.sts4-cache/
+
+### Node / Angular ###
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+
+### Terraform ###
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+# .terraform.lock.hcl is committed on purpose (pins provider versions)
+
+### Secrets and local config ###
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+### OS ###
+.DS_Store
+Thumbs.db
