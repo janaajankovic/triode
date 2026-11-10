@@ -173,6 +173,7 @@ Approving a proposal puts an *action job* on the queue; the worker then performs
 | 0006 | Human approval before every side effect | Fully automatic replies |
 | 0007 | Public subnets, no NAT gateway | NAT gateway (about $35/month) |
 | 0008 | All model calls through an `LlmGateway` interface | Spring AI calls scattered through the code |
+| 0009 | Region eu-north-1, EU cross-Region inference, `project`/`env` tags | Global inference profiles; resources outside the selected Region |
 
 Each ADR is half a page: context, decision, consequences.
 
