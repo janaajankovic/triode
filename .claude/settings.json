@@ -31,7 +31,12 @@
       "Bash(aws logs tail *)",
       "Bash(npm *)",
       "Bash(npx ng *)",
-      "mcp__atlassian"
+      "mcp__claude_ai_Atlassian_MCP__getAccessibleAtlassianResources",
+      "mcp__claude_ai_Atlassian_MCP__getJiraIssue",
+      "mcp__claude_ai_Atlassian_MCP__searchJiraIssuesUsingJql",
+      "mcp__claude_ai_Atlassian_MCP__listJiraIssueComments",
+      "mcp__claude_ai_Atlassian_MCP__transitionJiraIssue",
+      "mcp__claude_ai_Atlassian_MCP__addOrEditJiraIssueComment"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -41,7 +46,8 @@
       "Bash(rm -rf *)",
       "Bash(aws iam *)",
       "Read(./.env)",
-      "Read(./**/*.tfvars)"
+      "Read(./**/*.tfvars)",
+      "mcp__claude_ai_Atlassian_MCP__executeDestructive"
     ]
   }
 }
