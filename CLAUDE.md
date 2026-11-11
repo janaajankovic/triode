@@ -25,6 +25,15 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Commits: Conventional Commits with the Jira key, e.g. `feat(triage): TRI-14 classify tickets with structured output`.
 - Branches: `feature/TRI-<n>-short-name`, `fix/...`, `chore/...`; never commit to or push `main` directly.
 
+## CI (Bitbucket Pipelines)
+- Free plan: 50 build minutes/month, about 2 min per PR run. Only pull requests trigger a pipeline (each push to an open PR
+  is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on the step.
+  Push only after a green local `verify`, and batch commits.
+- Testcontainers runs against the Pipelines Docker service with Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`);
+  the service has 1 GB of the 4 GB step, the rest is for Maven/Surefire.
+- PRs: create them with the Atlassian MCP tool `createBitbucketRepoPullRequest` (workspace `janajankovic`, repo `triode`).
+  Description sections: What / Why (Jira: TRI-n) / How it was tested / Screenshots / notes.
+
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
 
