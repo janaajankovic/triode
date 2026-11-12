@@ -28,15 +28,23 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - AWS: ADR 0009 and the note at the top of plan §8.1 override the older AWS steps in the plan (Frankfurt, root user, Identity Center).
 
 ## CI (Bitbucket Pipelines)
-- Free plan: 50 build minutes/month; each PR run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
+- Free plan: 50 build minutes/month; a cloud run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
   is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on the step.
   Push only after a green local `verify`, and batch commits.
 - The PR step has `runs-on: [self.hosted, linux]` (laptop runner, 0 build minutes); the manual custom pipeline
   `test-in-cloud` runs the same step in the cloud when the runner is offline.
+- Runner: Docker container `triode-runner` (setup and Docker Desktop fixes in README "CI runner"). Before pushing, check
+  `docker ps --filter name=triode-runner`; if it isn't running, ask the user to `docker start triode-runner` (an offline
+  runner fails the PR step at once). Never ask for or handle the runner's UUIDs, client ID or secret.
+- The Bash tool is Git Bash: prefix `docker run -v /linux/path:…` with `MSYS_NO_PATHCONV=1`, or the path gets rewritten.
 - Testcontainers runs against the Pipelines Docker service with Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`);
   the service has 1 GB of the 4 GB step, the rest is for Maven/Surefire.
 - PRs: create them with the Atlassian MCP tool `createBitbucketRepoPullRequest` (workspace `janajankovic`, repo `triode`).
-  Description sections: What / Why (Jira: TRI-n) / How it was tested / Screenshots / notes.
+  Bitbucket operations aren't primary tools: find them with `discover`, run them with `executeRead`/`executeWrite`.
+  Description sections: What / Why (Jira: TRI-n) / How it was tested / Screenshots (drop if none) /
+  Explain-back (heading left empty for the user) / Notes.
+- The coordinator review is a PR comment headed "Coordinator review (Claude)"; read it with
+  `listBitbucketRepoPullRequestComments`. The user replies to and resolves it.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
