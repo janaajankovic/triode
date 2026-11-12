@@ -1,6 +1,9 @@
 # CI for Triode (plan §7.4). For now only pull requests run a pipeline; merge-to-main
 # and tag deployments are added once the AWS infrastructure exists.
 # Free plan: 50 build minutes/month, so run `./mvnw verify` locally before pushing.
+# PR builds run on the self-hosted runner on the maintainer's laptop (TRI-14), which uses
+# no build minutes. If it is offline the PR step fails at once; then run the custom
+# pipeline `test-in-cloud` on the branch (see README, "CI runner").
 image: maven:3.9-eclipse-temurin-25
 
 definitions:
@@ -28,4 +31,10 @@ definitions:
 pipelines:
   pull-requests:
     '**':
+      - step:
+          <<: *test
+          runs-on: [self.hosted, linux]
+  # Manual fallback when the runner is offline: the same step on Bitbucket's cloud (~2 build minutes).
+  custom:
+    test-in-cloud:
       - step: *test

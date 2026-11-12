@@ -53,6 +53,54 @@ cd backend
 - Branching: trunk-based, short-lived `feature/TRI-<n>-…` branches, squash-merged via pull requests ([ADR 0002](docs/adr/0002-trunk-based-development.md))
 - Pipeline: _TODO: diagram_ (pull request → tests; merge to `main` → staging; tag `v*` → production after approval)
 
+## CI runner
+
+Pull-request builds run on a self-hosted Bitbucket runner (Linux Docker, x86_64) on the maintainer's laptop, so they use no build minutes from the Free plan's 50. The step is the same as in the cloud: `maven:3.9-eclipse-temurin-25`, a Docker service for Testcontainers (Ryuk disabled), `max-time: 15`.
+
+**Register once:** Repository settings → Runners → Add runner → System and architecture *Linux Docker (x86_64)*, labels `self.hosted` and `linux`. The dialog shows a `docker container run` command with your UUIDs and OAuth credentials.
+
+**Start it:** open a **separate PowerShell window** just for this. Never paste the OAuth client secret into a file, a chat or a command line (PowerShell keeps command history in a plain-text file); `Read-Host` input is not saved:
+
+```powershell
+$env:OAUTH_CLIENT_SECRET = Read-Host "Runner OAuth client secret"
+# Replace the placeholders with the values from the dialog; if the dialog's image tag or flags
+# differ from this template, follow the dialog. Single quotes stop PowerShell from reading {…} as code.
+docker container run -d --name triode-runner `
+  -v /var/tmp/bbrunner:/var/tmp/bbrunner `
+  -v /var/run/docker.sock:/var/run/docker.sock `
+  -v /var/lib/docker/containers:/var/lib/docker/containers:ro `
+  -e 'ACCOUNT_UUID={<ACCOUNT_UUID>}' `
+  -e 'REPOSITORY_UUID={<REPOSITORY_UUID>}' `
+  -e 'RUNNER_UUID={<RUNNER_UUID>}' `
+  -e RUNTIME_PREREQUISITES_ENABLED=true `
+  -e 'OAUTH_CLIENT_ID=<OAUTH_CLIENT_ID>' `
+  -e OAUTH_CLIENT_SECRET `
+  -e WORKING_DIRECTORY=/var/tmp/bbrunner `
+  docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner:<RUNNER_VERSION>
+docker logs -f triode-runner        # wait until the log reports the runner as online, then Ctrl+C
+Remove-Item Env:OAUTH_CLIENT_SECRET
+```
+
+`-e OAUTH_CLIENT_SECRET` without a value passes the secret from the environment variable. Once Repository settings → Runners shows the runner as **Online**, **close that PowerShell window**. The runner keeps running in Docker Desktop.
+
+**Image tag:** use the tag that Atlassian's Add-runner dialog shows for `<RUNNER_VERSION>`. The Runners page shows each runner's version; a red badge next to it means the runner is out of date. To upgrade, stop and remove the container and start it again with the newer tag (same UUIDs and secret).
+
+**Docker Desktop fixes** (Docker Desktop on WSL2 is not officially supported by Atlassian; these two make it work):
+1. **Working directory:** mount `/var/tmp/bbrunner` and set `WORKING_DIRECTORY=/var/tmp/bbrunner`, as above, not `/tmp`. Docker Desktop mounts `/tmp` with `noexec`, so native libraries (e.g. netty's) fail to load from it.
+2. **Log driver:** Docker Desktop → Settings → Docker Engine, set `"log-driver": "json-file"` in the JSON and click Apply & restart. The runner refuses to start with any other log driver.
+
+If step logs stop appearing in the Bitbucket UI, the fallback is a Windows runner.
+
+**After a reboot:** start Docker Desktop, then `docker start triode-runner`. Stop it with `docker stop triode-runner` when you are done. The container keeps its configuration, so no secret is needed again.
+
+**When the laptop is off:** a step with `runs-on` fails at once if no runner is online (it is not queued). Either start the runner and re-run the step, or run the same step in the cloud (about 2 build minutes): Pipelines → Run pipeline → choose the branch → `test-in-cloud`. The result attaches to the commit, so the pull request shows it. Or run `./mvnw verify` locally and leave the PR build until the runner is back.
+
+**Check that a build used 0 cloud build minutes:**
+1. On the pipeline run, open the step: its details should name the runner you registered, not Bitbucket's cloud. Also check `docker logs triode-runner`, which shows the step being picked up.
+2. Workspace settings → **Pipelines usage** (workspace admins, monthly plans) lists build-minute consumption per repository and per build for the current billing period; the runner build shows 0 minutes and the workspace total does not change. Atlassian: "Builds that run on self-hosted runners do not count towards build minutes."
+
+Security: the repository is public, but pull requests from forks don't trigger pipelines in Bitbucket, so only people with write access (the maintainer) can run code on the runner.
+
 ## Known limitations and next steps
 
 - _TODO_
