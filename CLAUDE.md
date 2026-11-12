@@ -31,6 +31,8 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Free plan: 50 build minutes/month; each PR run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
   is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on the step.
   Push only after a green local `verify`, and batch commits.
+- The PR step has `runs-on: [self.hosted, linux]` (laptop runner, 0 build minutes); the manual custom pipeline
+  `test-in-cloud` runs the same step in the cloud when the runner is offline.
 - Testcontainers runs against the Pipelines Docker service with Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`);
   the service has 1 GB of the 4 GB step, the rest is for Maven/Surefire.
 - PRs: create them with the Atlassian MCP tool `createBitbucketRepoPullRequest` (workspace `janajankovic`, repo `triode`).

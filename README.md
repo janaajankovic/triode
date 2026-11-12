@@ -53,6 +53,59 @@ cd backend
 - Branching: trunk-based, short-lived `feature/TRI-<n>-…` branches, squash-merged via pull requests ([ADR 0002](docs/adr/0002-trunk-based-development.md))
 - Pipeline: _TODO: diagram_ (pull request → tests; merge to `main` → staging; tag `v*` → production after approval)
 
+## CI runner
+
+Pull-request builds run on a self-hosted Bitbucket runner (Linux Docker, x86_64) on the maintainer's laptop, so they use no build minutes from the Free plan's 50. The step is the same as in the cloud: `maven:3.9-eclipse-temurin-25`, a Docker service for Testcontainers (Ryuk disabled), `max-time: 15`.
+
+**Register once:** Repository settings → Runners → Add runner → System and architecture *Linux Docker (x86_64)*, labels `self.hosted` and `linux`. The dialog shows a `docker container run` command with your UUIDs and OAuth credentials.
+
+**Start it:** open a **separate PowerShell window** just for this. Never paste the dialog's values into a file, a chat or a command line (PowerShell keeps command history in a plain-text file). Enter each one at a `Read-Host` prompt instead, which is not saved. Copy the values exactly as the dialog shows them; the UUIDs already include their `{ }`:
+
+```powershell
+$env:ACCOUNT_UUID        = Read-Host "ACCOUNT_UUID"
+$env:REPOSITORY_UUID     = Read-Host "REPOSITORY_UUID"
+$env:RUNNER_UUID         = Read-Host "RUNNER_UUID"
+$env:OAUTH_CLIENT_ID     = Read-Host "OAUTH_CLIENT_ID"
+$env:OAUTH_CLIENT_SECRET = Read-Host "OAUTH_CLIENT_SECRET"
+# "-e NAME" without a value passes the variable from this window's environment.
+# If the dialog's image or other flags differ from this template, follow the dialog.
+docker container run -d --name triode-runner `
+  -v /var/lib/bbrunner:/var/lib/bbrunner `
+  -v /var/run/docker.sock:/var/run/docker.sock `
+  -v /var/lib/docker/containers:/var/lib/docker/containers:ro `
+  -e ACCOUNT_UUID `
+  -e REPOSITORY_UUID `
+  -e RUNNER_UUID `
+  -e OAUTH_CLIENT_ID `
+  -e OAUTH_CLIENT_SECRET `
+  -e RUNTIME_PREREQUISITES_ENABLED=true `
+  -e WORKING_DIRECTORY=/var/lib/bbrunner `
+  docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner
+docker logs -f triode-runner        # wait until the log reports the runner as online, then Ctrl+C
+```
+
+Once Repository settings → Runners shows the runner as **Online**, **close that PowerShell window**; the variables disappear with it. The runner keeps running in Docker Desktop.
+
+**Image:** use the image exactly as Atlassian's Add-runner dialog shows it. Currently that is the image without a tag (`latest`). The Runners page shows each runner's version; a red badge next to it means the runner is out of date.
+
+**Upgrading:** the secret is never stored, so you can't re-run the same command. Delete the runner in Repository settings → Runners, remove the old container (`docker rm -f triode-runner`), `docker pull` the image, then register a new runner and start it as above with the new dialog's values.
+
+**Docker Desktop fixes** (Docker Desktop on WSL2 is not officially supported by Atlassian; these two make it work):
+1. **Working directory:** mount `/var/lib/bbrunner` and set `WORKING_DIRECTORY=/var/lib/bbrunner`, as above. Do not use `/tmp` or `/var/tmp`: in Docker Desktop's VM both are mounted `noexec`, so the cloned `./mvnw` fails with "Permission denied" and native libraries (e.g. netty's) fail to load. `/var/lib` is on the VM's ext4 disk without `noexec`. Check with `docker run --rm -v /var/lib/bbrunner:/w alpine sh -c "mount | grep ' /w '"`.
+2. **Log driver:** Docker Desktop → Settings → Docker Engine, set `"log-driver": "json-file"` in the JSON and click Apply & restart. The runner refuses to start with any other log driver.
+
+If step logs stop appearing in the Bitbucket UI, the fallback is a Windows runner.
+
+**After a reboot:** start Docker Desktop, then `docker start triode-runner`. Stop it with `docker stop triode-runner` when you are done. The container keeps its configuration, so no secret is needed again.
+
+**When the laptop is off:** a step with `runs-on` fails at once if no runner is online (it is not queued). Either start the runner and re-run the step, or run the same step in the cloud (about 2 build minutes): Pipelines → Run pipeline → choose the branch → `test-in-cloud`. The result attaches to the commit, so the pull request shows it. Or run `./mvnw verify` locally and leave the PR build until the runner is back.
+
+**Check that a build used 0 cloud build minutes:**
+1. On the pipeline run, open the step: its details should name the runner you registered, not Bitbucket's cloud. Also check `docker logs triode-runner`, which shows the step being picked up.
+2. Workspace settings → **Pipelines usage** (workspace admins, monthly plans) lists build-minute consumption per repository and per build for the current billing period; the runner build shows 0 minutes and the workspace total does not change. Atlassian: "Builds that run on self-hosted runners do not count towards build minutes."
+
+Security: the repository is public, but pull requests from forks don't trigger pipelines in Bitbucket, so only people with write access (the maintainer) can run code on the runner.
+
 ## Known limitations and next steps
 
 - _TODO_
