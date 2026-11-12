@@ -36,7 +36,9 @@
       "mcp__claude_ai_Atlassian_MCP__searchJiraIssuesUsingJql",
       "mcp__claude_ai_Atlassian_MCP__listJiraIssueComments",
       "mcp__claude_ai_Atlassian_MCP__transitionJiraIssue",
-      "mcp__claude_ai_Atlassian_MCP__addOrEditJiraIssueComment"
+      "mcp__claude_ai_Atlassian_MCP__addOrEditJiraIssueComment",
+      "mcp__claude_ai_Atlassian_MCP__discover",
+      "mcp__claude_ai_Atlassian_MCP__executeRead"
     ],
     "deny": [
       "Bash(git push --force*)",
@@ -47,7 +49,11 @@
       "Bash(aws iam *)",
       "Read(./.env)",
       "Read(./**/*.tfvars)",
-      "mcp__claude_ai_Atlassian_MCP__executeDestructive"
+      "mcp__claude_ai_Atlassian_MCP__executeDestructive",
+      "Read(~/.ssh/**)",
+      "Edit(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Edit(~/.aws/**)"
     ]
   }
 }

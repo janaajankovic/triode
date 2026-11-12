@@ -24,9 +24,11 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Explain any new library or pattern before using it.
 - Commits: Conventional Commits with the Jira key, e.g. `feat(triage): TRI-14 classify tickets with structured output`.
 - Branches: `feature/TRI-<n>-short-name`, `fix/...`, `chore/...`; never commit to or push `main` directly.
+- Git remote: `git@ssh.bitbucket.org:janajankovic/triode.git` (Bitbucket moved SSH off `bitbucket.org` on 2026-11-12).
+- AWS: ADR 0009 and the note at the top of plan §8.1 override the older AWS steps in the plan (Frankfurt, root user, Identity Center).
 
 ## CI (Bitbucket Pipelines)
-- Free plan: 50 build minutes/month, about 2 min per PR run. Only pull requests trigger a pipeline (each push to an open PR
+- Free plan: 50 build minutes/month; each PR run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
   is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on the step.
   Push only after a green local `verify`, and batch commits.
 - Testcontainers runs against the Pipelines Docker service with Ryuk disabled (`TESTCONTAINERS_RYUK_DISABLED=true`);

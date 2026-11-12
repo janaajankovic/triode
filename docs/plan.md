@@ -132,7 +132,7 @@ The core is Java 25 + Spring Boot 4.1 + Spring AI 2.0, deployed on AWS ECS Farga
 
 Triode is a modular monolith deployed as two ECS services from one image: the `api` answers users in milliseconds, and the `worker` runs the slow AI steps from an SQS queue. Nothing leaves the system (a reply, a Jira issue) until a human approves it.
 
-&#91;embedded content: TriageAI on AWS · 2 ECS services from one image\]
+&#91;embedded content: Triode on AWS · 2 ECS services from one image\]
 
 Users only ever wait for the api. The worker takes jobs from SQS, calls Bedrock, saves results to PostgreSQL and, after approval, creates the Jira issue; jobs that keep failing land in a dead-letter queue for inspection.
 
@@ -283,7 +283,7 @@ Example: *TRI-14 — As a support agent, I want each new ticket classified by ca
 - [ ] Unit and integration tests pass in CI
 - [ ] No new Checkstyle or Spotless issues
 - [ ] Docs or ADR updated if behaviour or design changed
-- [ ] Deployed to staging and smoke-tested
+- [ ] Deployed to staging and smoke-tested (from Sprint 2)
 
 ### 6.3 Sprint routine (2-week sprints)
 
@@ -314,7 +314,7 @@ Bitbucket holds the code, the pull requests and the CI/CD pipeline, all linked t
 1. **Log in** to bitbucket.org with the same Atlassian account as Jira.
 2. **Create a workspace** (e.g. `janajankovic`) and inside it a **project** called Triode.
 3. **Create the repository** `triode`. Make it **public** so recruiters can open it; never commit secrets (7.5).
-4. **Add an SSH key**: Personal settings → SSH keys. Then clone: `git clone git@bitbucket.org:janajankovic/triode.git`.
+4. **Add an SSH key**: Personal settings → SSH keys. Then clone: `git clone git@ssh.bitbucket.org:janajankovic/triode.git`.
 5. **Connect Jira**: in your Jira project, open the development tools / toolchain settings and connect the Bitbucket workspace. Afterwards every Jira issue shows its branches, commits, pull requests and builds.
 6. **Protect `main`**: Repository settings → Branch restrictions → `main`: no direct pushes, changes only through pull requests, require at least one passing build. On the free plan Bitbucket *shows* failed checks but only paid plans *enforce* them, so the rule "never merge red" is your discipline.
 7. **Set a default pull-request description** (Repository settings → Pull requests):
@@ -344,7 +344,7 @@ Write an ADR (`docs/adr/0002-trunk-based-development.md`) explaining why you cho
 
 - **Commit messages**: Conventional Commits plus the Jira key, e.g. `feat(triage): TRI-14 classify tickets with structured output`.
 - **Smart commits** move Jira issues from Git: `TRI-14 #comment added retry on invalid JSON #time 1h`.
-- **Self-review every PR** the next morning, reading the diff in Bitbucket. Also ask Claude to review it. Leave real comments and resolve them, so the history shows review.
+- **Self-review every PR** the next morning, reading the diff in Bitbucket, and leave at least one inline comment of your own. Claude's review (prompt P5) is posted on the PR as a comment headed "Coordinator review (Claude)"; reply to each point and resolve it, so the history shows review.
 - **Merge strategy**: squash merge, so `main` has one clean commit per story.
 - **Releases**: tag `v0.N.0` at the end of each sprint. The tag triggers the production deployment.
 - **Practise the hard parts on purpose** at least once: resolve a merge conflict, rebase a branch, revert a bad merge on `main`.
@@ -353,16 +353,16 @@ Write an ADR (`docs/adr/0002-trunk-based-development.md`) explaining why you cho
 
 | Trigger | Steps | Roughly |
 | --- | --- | --- |
-| Pull request | Build, unit + integration tests (Testcontainers), style checks | 4–6 min |
+| Pull request | Build, unit + integration tests (Testcontainers), style checks | about 2 min (1 min 52 s measured) |
 | Merge to `main` | Same tests, build Docker image, push to ECR, deploy to **staging**, smoke test | 8–10 min |
 | Tag `v*` | Deploy the same image to **production** after a manual approval | 2–3 min |
 | On demand | Eval suite against real Bedrock (costs money, so never automatic) | 3–5 min |
 
-With 50 free minutes that is only a handful of runs per month. Three ways around it, in order:
+With 50 free minutes and about 2 minutes per pull-request run (measured on TRI-13; a red run still costs about 80 s of startup), that is roughly 25 runs a month. Three ways to stretch it, in order:
 
 1. Run the full test suite locally before pushing (`mvn verify`), and keep pipelines off plain branch pushes.
-2. Add a **self-hosted runner** on your laptop (Docker). Atlassian states that runner minutes are not charged against build minutes ([docs](https://support.atlassian.com/bitbucket-cloud/docs/runners/)), though it has announced new runner pricing, so check before relying on it.
-3. Buy extra minutes in busy months: $10 per 1,000 ([pricing](https://www.atlassian.com/software/bitbucket/pricing)).
+2. Add a **self-hosted runner** on your laptop (TRI-14). Builds on your own runner don't use build minutes, and the Free plan includes one concurrent self-hosted build slot at no cost; extra slots are a $15/month add-on we don't need ([licensing](https://www.atlassian.com/licensing/bitbucket), checked Nov 12).
+3. Buy extra minutes: $10 per 1,000 ([pricing](https://www.atlassian.com/software/bitbucket/pricing)). The pricing page lists this for the paid plans only, so on Free it would mean upgrading; the runner is the practical fallback.
 
 The skeleton we will grow in Sprint 1 (Testcontainers needs the Docker service):
 
@@ -380,7 +380,7 @@ definitions:
         services: [docker]
         script:
           - export TESTCONTAINERS_RYUK_DISABLED=true
-          - cd backend && mvn -B verify
+          - cd backend && ./mvnw -B verify
 
 pipelines:
   pull-requests:
@@ -408,6 +408,8 @@ pipelines:
             - ./scripts/deploy.sh prod
 ```
 
+The live file is `bitbucket-pipelines.yml` in the repo, which uses the Maven wrapper (`./mvnw`) with its own cache for `~/.m2/wrapper` and saves the JaCoCo report as an artifact. TRI-13 added `max-time: 15` so a hung run can't use up the monthly minutes. Only the pull-request trigger exists until Sprint 2 adds the `main` and tag steps.
+
 ### 7.5 Secrets and AWS access
 
 - The pipeline gets AWS access through **OpenID Connect**: AWS trusts Bitbucket's identity provider, and each step assumes an IAM role with `oidc: true`. No AWS keys are stored anywhere ([Atlassian guide](https://support.atlassian.com/bitbucket-cloud/docs/deploy-on-aws-using-bitbucket-pipelines-openid-connect)). We set this up together in Sprint 2.
@@ -427,6 +429,8 @@ You will learn AWS one service per sprint, always through Terraform after the fi
 
 ### 8.1 Day-one setup (about 2 hours, do it in this order)
 
+> **What was actually set up (Nov 10).** The account uses AWS's new project-based sign-up, which replaces steps 1–3 and 5 below: the project is fixed to **Stockholm, `eu-north-1`**; there is no root user or Identity Center to configure; the CLI and Claude Code sign in with **`aws login --profile triode`** (12-hour credentials, renewable for 90 days without the browser). Claude Code also has the **AWS Agent Toolkit**: the aws-mcp server and 25 AWS skills. Claude models on Bedrock are reached from `eu-north-1` through EU cross-region inference profiles. Done since: a $20/month spend limit with alerts at 50/75/90% and the early control "Stop new resource launches"; credits are $120. Cost Anomaly Detection is skipped (it needs enterprise AWS). Bedrock model access is blocked for the new account and an AWS support case is open (TRI-12). On Nov 11 AWS put the account's projects on hold pending identity verification; the Bedrock block is probably part of the same check. Before the first terraform apply in Sprint 2, raise the spend limit to about $75 and add budgets at $25 and $50. If a service the plan needs turns out to be restricted, activate advanced AWS features; nothing has to be migrated.
+
 1. **Create the account** at aws.amazon.com. You will be asked to pick a Free or a Paid plan; both receive the credits. I recommend **Paid**: when the Free plan ends AWS closes the account, and some services this project needs may be limited on it. Budgets (step 4) protect you instead. If the sign-up offers a project with a **spend limit**, set one.
 2. **Secure the root user**: enable MFA (an authenticator app). After today you never log in as root again.
 3. **Create your everyday login** with IAM Identity Center: a user for yourself with the AdministratorAccess permission set. On your laptop run `aws configure sso` so the CLI uses short-lived credentials.
@@ -439,7 +443,7 @@ You will learn AWS one service per sprint, always through Terraform after the fi
 
 | Service | Used for | Sprint |
 | --- | --- | --- |
-| IAM, Identity Center | Your login; roles for ECS tasks and for the pipeline (OIDC) | 1–2 |
+| IAM | Your login; roles for ECS tasks and for the pipeline (OIDC) | 1–2 |
 | Budgets, Cost Explorer | Cost alarms and per-tag cost reports | 1 |
 | S3 | Terraform state; Angular site files | 2 |
 | ECR | Docker image registry | 2 |
@@ -485,6 +489,8 @@ Rules that keep you inside the credits:
 - Local development uses docker-compose and Ollama, never AWS.
 - After the job hunt, destroy everything and keep the demo video.
 
+**Stockholm note.** The prices above are for Frankfurt; recheck them for `eu-north-1` before the first `terraform apply`. With $120 in credits, destroy staging whenever you stop working on it, and make a budget plan for production before Sprint 5.
+
 ### 8.5 Terraform basics we will follow
 
 - State in an S3 bucket with locking, created once by a small bootstrap script.
@@ -509,17 +515,17 @@ Six two-week sprints after a setup week take Triode from an empty repo (November
 
 Left: the sprint and its dates. Middle: what gets built. Right: the gate that ends it. Sprint 4 overlaps New Year and Orthodox Christmas, so plan it at about half capacity; the dates can slide a week without harm.
 
-### This week: Sprint 0 checklist
+### Sprint 0 checklist (done Nov 11)
 
-- [ ] Create the Jira site and the `TRI` and `TSK` projects (6.1)
-- [ ] Create the Bitbucket workspace and `triode` repo; protect `main` (7.1)
-- [ ] Create the AWS account; MFA on root; Identity Center user; budgets at $10/$25/$50 (8.1)
-- [ ] Install Java 25, Maven, Docker, Terraform, the AWS CLI, Node + Angular CLI, and Claude Code
-- [ ] Create the 9 epics and write about 10 stories for Sprint 1 (6.2)
-- [ ] Write ADR 0001 (modular monolith) and ADR 0002 (trunk-based development)
-- [ ] Create a Claude Project "Triode" and add this plan to it (11.1)
+- [x] Create the Jira site and the `TRI` and `TSK` projects (6.1)
+- [x] Create the Bitbucket workspace and `triode` repo; protect `main` (7.1)
+- [x] Create the AWS account; spend limit and alerts (8.1)
+- [x] Install Java 25, Maven, Docker, Terraform, the AWS CLI, Node and Claude Code (Angular CLI waits for Sprint 4)
+- [x] Create the 9 epics and write about 10 stories for Sprint 1 (6.2)
+- [x] Write ADR 0001 (modular monolith) and ADR 0002 (trunk-based development)
+- [x] Create a Claude Project "Triode" and add this plan to it (11.1)
 
-When these are ticked, come back with "Sprint 0 done" and we will plan Sprint 1 together, story by story.
+Sprint 0 closed on Nov 11, and Sprint 1 started the same evening (ends Nov 29). Open follow-ups, Bedrock access and the spend limit before Sprint 2, are tracked in TRI-12.
 
 Step-by-step instructions, prompts and permission settings for this week: Sprint 0 Playbook
 
@@ -574,7 +580,7 @@ Use Claude as tutor, pair programmer and reviewer, but stay the engineer: the ru
 
 - **A Claude Project called "Triode"** in the Claude app. Add this plan, your ADRs, `CLAUDE.md` and the database schema as project knowledge, so every chat starts with context.
 - **Claude Code** (included in Pro) in your terminal, inside the repo, for coding tasks. It reads `CLAUDE.md` automatically.
-- **One chat per Jira story.** Start it by pasting the story and acceptance criteria. Short, focused chats give better answers and use your plan's limits more efficiently.
+- **One coordinator chat per sprint, one Claude Code session per story.** Claude Code reads the story from Jira; type /clear before the next one. Short, focused chats give better answers and use your plan's limits more efficiently.
 
 A starting `CLAUDE.md`:
 
