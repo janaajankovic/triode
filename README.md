@@ -59,31 +59,36 @@ Pull-request builds run on a self-hosted Bitbucket runner (Linux Docker, x86_64)
 
 **Register once:** Repository settings → Runners → Add runner → System and architecture *Linux Docker (x86_64)*, labels `self.hosted` and `linux`. The dialog shows a `docker container run` command with your UUIDs and OAuth credentials.
 
-**Start it:** open a **separate PowerShell window** just for this. Never paste the OAuth client secret into a file, a chat or a command line (PowerShell keeps command history in a plain-text file); `Read-Host` input is not saved:
+**Start it:** open a **separate PowerShell window** just for this. Never paste the dialog's values into a file, a chat or a command line (PowerShell keeps command history in a plain-text file). Enter each one at a `Read-Host` prompt instead, which is not saved. Copy the values exactly as the dialog shows them; the UUIDs already include their `{ }`:
 
 ```powershell
-$env:OAUTH_CLIENT_SECRET = Read-Host "Runner OAuth client secret"
-# Replace the placeholders with the values from the dialog; if the dialog's image tag or flags
-# differ from this template, follow the dialog. Single quotes stop PowerShell from reading {…} as code.
+$env:ACCOUNT_UUID        = Read-Host "ACCOUNT_UUID"
+$env:REPOSITORY_UUID     = Read-Host "REPOSITORY_UUID"
+$env:RUNNER_UUID         = Read-Host "RUNNER_UUID"
+$env:OAUTH_CLIENT_ID     = Read-Host "OAUTH_CLIENT_ID"
+$env:OAUTH_CLIENT_SECRET = Read-Host "OAUTH_CLIENT_SECRET"
+# "-e NAME" without a value passes the variable from this window's environment.
+# If the dialog's image or other flags differ from this template, follow the dialog.
 docker container run -d --name triode-runner `
   -v /var/lib/bbrunner:/var/lib/bbrunner `
   -v /var/run/docker.sock:/var/run/docker.sock `
   -v /var/lib/docker/containers:/var/lib/docker/containers:ro `
-  -e 'ACCOUNT_UUID={<ACCOUNT_UUID>}' `
-  -e 'REPOSITORY_UUID={<REPOSITORY_UUID>}' `
-  -e 'RUNNER_UUID={<RUNNER_UUID>}' `
-  -e RUNTIME_PREREQUISITES_ENABLED=true `
-  -e 'OAUTH_CLIENT_ID=<OAUTH_CLIENT_ID>' `
+  -e ACCOUNT_UUID `
+  -e REPOSITORY_UUID `
+  -e RUNNER_UUID `
+  -e OAUTH_CLIENT_ID `
   -e OAUTH_CLIENT_SECRET `
+  -e RUNTIME_PREREQUISITES_ENABLED=true `
   -e WORKING_DIRECTORY=/var/lib/bbrunner `
   docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner
 docker logs -f triode-runner        # wait until the log reports the runner as online, then Ctrl+C
-Remove-Item Env:OAUTH_CLIENT_SECRET
 ```
 
-`-e OAUTH_CLIENT_SECRET` without a value passes the secret from the environment variable. Once Repository settings → Runners shows the runner as **Online**, **close that PowerShell window**. The runner keeps running in Docker Desktop.
+Once Repository settings → Runners shows the runner as **Online**, **close that PowerShell window**; the variables disappear with it. The runner keeps running in Docker Desktop.
 
-**Image:** use the image exactly as Atlassian's Add-runner dialog shows it. Currently that is the image without a tag (`latest`). The Runners page shows each runner's version; a red badge next to it means the runner is out of date. To upgrade, `docker pull` the image, then stop and remove the container and start it again with the same command (same UUIDs and secret).
+**Image:** use the image exactly as Atlassian's Add-runner dialog shows it. Currently that is the image without a tag (`latest`). The Runners page shows each runner's version; a red badge next to it means the runner is out of date.
+
+**Upgrading:** the secret is never stored, so you can't re-run the same command. Delete the runner in Repository settings → Runners, remove the old container (`docker rm -f triode-runner`), `docker pull` the image, then register a new runner and start it as above with the new dialog's values.
 
 **Docker Desktop fixes** (Docker Desktop on WSL2 is not officially supported by Atlassian; these two make it work):
 1. **Working directory:** mount `/var/lib/bbrunner` and set `WORKING_DIRECTORY=/var/lib/bbrunner`, as above. Do not use `/tmp` or `/var/tmp`: in Docker Desktop's VM both are mounted `noexec`, so the cloned `./mvnw` fails with "Permission denied" and native libraries (e.g. netty's) fail to load. `/var/lib` is on the VM's ext4 disk without `noexec`. Check with `docker run --rm -v /var/lib/bbrunner:/w alpine sh -c "mount | grep ' /w '"`.
