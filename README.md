@@ -66,7 +66,7 @@ $env:OAUTH_CLIENT_SECRET = Read-Host "Runner OAuth client secret"
 # Replace the placeholders with the values from the dialog; if the dialog's image tag or flags
 # differ from this template, follow the dialog. Single quotes stop PowerShell from reading {…} as code.
 docker container run -d --name triode-runner `
-  -v /var/tmp/bbrunner:/var/tmp/bbrunner `
+  -v /var/lib/bbrunner:/var/lib/bbrunner `
   -v /var/run/docker.sock:/var/run/docker.sock `
   -v /var/lib/docker/containers:/var/lib/docker/containers:ro `
   -e 'ACCOUNT_UUID={<ACCOUNT_UUID>}' `
@@ -75,18 +75,18 @@ docker container run -d --name triode-runner `
   -e RUNTIME_PREREQUISITES_ENABLED=true `
   -e 'OAUTH_CLIENT_ID=<OAUTH_CLIENT_ID>' `
   -e OAUTH_CLIENT_SECRET `
-  -e WORKING_DIRECTORY=/var/tmp/bbrunner `
-  docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner:<RUNNER_VERSION>
+  -e WORKING_DIRECTORY=/var/lib/bbrunner `
+  docker-public.packages.atlassian.com/sox/atlassian/bitbucket-pipelines-runner
 docker logs -f triode-runner        # wait until the log reports the runner as online, then Ctrl+C
 Remove-Item Env:OAUTH_CLIENT_SECRET
 ```
 
 `-e OAUTH_CLIENT_SECRET` without a value passes the secret from the environment variable. Once Repository settings → Runners shows the runner as **Online**, **close that PowerShell window**. The runner keeps running in Docker Desktop.
 
-**Image tag:** use the tag that Atlassian's Add-runner dialog shows for `<RUNNER_VERSION>`. The Runners page shows each runner's version; a red badge next to it means the runner is out of date. To upgrade, stop and remove the container and start it again with the newer tag (same UUIDs and secret).
+**Image:** use the image exactly as Atlassian's Add-runner dialog shows it. Currently that is the image without a tag (`latest`). The Runners page shows each runner's version; a red badge next to it means the runner is out of date. To upgrade, `docker pull` the image, then stop and remove the container and start it again with the same command (same UUIDs and secret).
 
 **Docker Desktop fixes** (Docker Desktop on WSL2 is not officially supported by Atlassian; these two make it work):
-1. **Working directory:** mount `/var/tmp/bbrunner` and set `WORKING_DIRECTORY=/var/tmp/bbrunner`, as above, not `/tmp`. Docker Desktop mounts `/tmp` with `noexec`, so native libraries (e.g. netty's) fail to load from it.
+1. **Working directory:** mount `/var/lib/bbrunner` and set `WORKING_DIRECTORY=/var/lib/bbrunner`, as above. Do not use `/tmp` or `/var/tmp`: in Docker Desktop's VM both are mounted `noexec`, so the cloned `./mvnw` fails with "Permission denied" and native libraries (e.g. netty's) fail to load. `/var/lib` is on the VM's ext4 disk without `noexec`. Check with `docker run --rm -v /var/lib/bbrunner:/w alpine sh -c "mount | grep ' /w '"`.
 2. **Log driver:** Docker Desktop → Settings → Docker Engine, set `"log-driver": "json-file"` in the JSON and click Apply & restart. The runner refuses to start with any other log driver.
 
 If step logs stop appearing in the Bitbucket UI, the fallback is a Windows runner.
