@@ -1,4 +1,9 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
@@ -12,7 +17,6 @@
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(git add *)",
-      "Bash(git commit *)",
       "Bash(git switch *)",
       "Bash(git checkout *)",
       "Bash(git branch*)",
