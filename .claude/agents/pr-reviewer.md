@@ -20,4 +20,9 @@ Your only write action is one PR comment. Never approve, merge, decline or edit 
    "## Automated review", then **Must-fix** (numbered, file:line, why), **Should-fix**,
    and **Questions for the author** (3 questions an interviewer could ask about this change).
    If nothing needs fixing, say so. Never mention product, model or tool names.
+   - Before posting, list the PR's comments (`listBitbucketRepoPullRequestComments`); if an "Automated review"
+     comment already exists, don't post again.
+   - If posting fails with a server or network error, wait about a minute, check the comments again, then retry once.
+   - If it still fails, stop and return the full comment text plus the error, so the main session can show it
+     to the user to paste manually.
 6. Return a 3-line summary to the caller.

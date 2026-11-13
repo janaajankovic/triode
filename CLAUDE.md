@@ -53,6 +53,8 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Reviews are posted by the pr-reviewer agent as one PR comment headed "Automated review"; the user replies to it
   and resolves it. Read it with `listBitbucketRepoPullRequestComments`. After the fix push there is no second full review;
   the reviewer only checks that the must-fixes are done.
+- The reviewer never posts a second "Automated review": it checks the PR's comments first, retries a failed post once
+  after about a minute, and otherwise returns the comment text for the user to paste.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
