@@ -323,7 +323,8 @@ Bitbucket holds the code, the pull requests and the CI/CD pipeline, all linked t
 ## What
 ## Why (Jira: TRI-XX)
 ## How it was tested
-## Screenshots / notes
+## Explain-back
+## Notes
 ```
 
 8. **Mirror to GitHub** (recruiters search there): add a second push URL with `git remote set-url --add --push origin <github-url>`, so one `git push` updates both.
@@ -344,7 +345,7 @@ Write an ADR (`docs/adr/0002-trunk-based-development.md`) explaining why you cho
 
 - **Commit messages**: Conventional Commits plus the Jira key, e.g. `feat(triage): TRI-14 classify tickets with structured output`.
 - **Smart commits** move Jira issues from Git: `TRI-14 #comment added retry on invalid JSON #time 1h`.
-- **Self-review every PR** the next morning, reading the diff in Bitbucket, and leave at least one inline comment of your own. Claude's review (prompt P5) is posted on the PR as a comment headed "Coordinator review (Claude)"; reply to each point and resolve it, so the history shows review.
+- **Self-review every PR** the next morning, reading the diff in Bitbucket, and leave at least one inline comment of your own. A separate reviewer agent (`pr-reviewer`, no edit rights) posts one comment headed "Automated review"; reply to each point and resolve it, so the history shows review.
 - **Merge strategy**: squash merge, so `main` has one clean commit per story.
 - **Releases**: tag `v0.N.0` at the end of each sprint. The tag triggers the production deployment.
 - **Practise the hard parts on purpose** at least once: resolve a merge conflict, rebase a branch, revert a bad merge on `main`.
@@ -602,7 +603,7 @@ A starting `CLAUDE.md`:
 3. **New technology** (first SQS listener, first Terraform module): Claude explains it, and you type the code yourself.
 4. **Familiar ground** (another endpoint, another test): Claude Code can write it; you review the diff line by line.
 5. **Explain-back**: in the pull request description, explain the change in your own words. If you can't, it doesn't merge.
-6. **Review**: paste the diff and ask Claude to review it against the Definition of Done.
+6. **Review**: the `pr-reviewer` agent reviews the pull request against the story, `CLAUDE.md` and the Definition of Done.
 
 ### 11.3 Asking for help with Jira, Bitbucket and AWS
 

@@ -22,10 +22,18 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Local database: `docker compose up -d` from the repo root.
 - Never add secrets, keys or tokens to code or config files. Local defaults in `application.properties` are throwaway values matching `docker-compose.yml`.
 - Explain any new library or pattern before using it.
-- Commits: Conventional Commits with the Jira key, e.g. `feat(triage): TRI-14 classify tickets with structured output`.
 - Branches: `feature/TRI-<n>-short-name`, `fix/...`, `chore/...`; never commit to or push `main` directly.
 - Git remote: `git@ssh.bitbucket.org:janajankovic/triode.git` (Bitbucket moved SSH off `bitbucket.org` on 2026-11-12).
 - AWS: ADR 0009 and the note at the top of plan §8.1 override the older AWS steps in the plan (Frankfurt, root user, Identity Center).
+
+## Workflow
+- Per story: plan (wait for OK) → implement with tests → verify → PR → pr-reviewer → fix must-fixes in one push →
+  user writes explain-back → user squash-merges.
+- Commits: stage, show `git diff --staged --stat`, propose 2–3 Conventional Commit messages with the Jira key
+  (`type(scope): TRI-n summary`, e.g. `feat(triage): TRI-14 classify tickets with structured output`), then wait and
+  commit with exactly the user's text. No attribution lines in commits or PRs.
+- Lessons for CLAUDE.md go into the story's own PR as the last commit, never a separate PR.
+- PR description: What / Why (Jira: TRI-n) / How it was tested / Explain-back (empty heading for the user) / Notes.
 
 ## CI (Bitbucket Pipelines)
 - Free plan: 50 build minutes/month; a cloud run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
@@ -41,10 +49,12 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
   the service has 1 GB of the 4 GB step, the rest is for Maven/Surefire.
 - PRs: create them with the Atlassian MCP tool `createBitbucketRepoPullRequest` (workspace `janajankovic`, repo `triode`).
   Bitbucket operations aren't primary tools: find them with `discover`, run them with `executeRead`/`executeWrite`.
-  Description sections: What / Why (Jira: TRI-n) / How it was tested / Screenshots (drop if none) /
-  Explain-back (heading left empty for the user) / Notes.
-- The coordinator review is a PR comment headed "Coordinator review (Claude)"; read it with
-  `listBitbucketRepoPullRequestComments`. The user replies to and resolves it.
+  Description sections: see "Workflow".
+- Reviews are posted by the pr-reviewer agent as one PR comment headed "Automated review"; the user replies to it
+  and resolves it. Read it with `listBitbucketRepoPullRequestComments`. After the fix push there is no second full review;
+  the reviewer only checks that the must-fixes are done.
+- The reviewer never posts a second "Automated review": it checks the PR's comments first, retries a failed post once
+  after about a minute, and otherwise returns the comment text for the user to paste.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
