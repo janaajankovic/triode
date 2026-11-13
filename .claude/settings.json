@@ -61,7 +61,12 @@
       "Bash(env*)",
       "Bash(printenv*)",
       "Bash(docker inspect*)",
-      "Read(~/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/**)"
+      "Read(~/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/**)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Edit(./**/.env)",
+      "Edit(./**/.env.*)",
+      "Bash(docker compose config*)"
     ]
   }
 }
