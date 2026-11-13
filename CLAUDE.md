@@ -33,7 +33,7 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
   (`type(scope): TRI-n summary`, e.g. `feat(triage): TRI-14 classify tickets with structured output`), then wait and
   commit with exactly the user's text. No attribution lines in commits or PRs.
 - Lessons for CLAUDE.md go into the story's own PR as the last commit, never a separate PR.
-- PR description: What / Why / How it was tested / Explain-back (empty heading for the user) / Notes.
+- PR description: What / Why (Jira: TRI-n) / How it was tested / Explain-back (empty heading for the user) / Notes.
 
 ## CI (Bitbucket Pipelines)
 - Free plan: 50 build minutes/month; a cloud run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
@@ -51,7 +51,8 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
   Bitbucket operations aren't primary tools: find them with `discover`, run them with `executeRead`/`executeWrite`.
   Description sections: see "Workflow".
 - Reviews are posted by the pr-reviewer agent as one PR comment headed "Automated review"; the user replies to it
-  and resolves it.
+  and resolves it. Read it with `listBitbucketRepoPullRequestComments`. After the fix push there is no second full review;
+  the reviewer only checks that the must-fixes are done.
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
