@@ -19,5 +19,5 @@ class ArchitectureTests {
             .dependOnClassesThat()
             .resideInAnyPackage("org.springframework..", "software.amazon..", "jakarta.persistence..")
             .because("domain packages hold plain business rules, free of Spring, AWS, Spring AI and JPA")
-            .allowEmptyShould(true);
+            .allowEmptyShould(false);
 }
