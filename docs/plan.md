@@ -147,7 +147,15 @@ The agent is a **bounded workflow with tool use**, not a free-roaming multi-agen
 5. **Draft a Jira issue** if the ticket is a bug: summary, steps to reproduce, severity. This is a proposal, not an action.
 6. **Save** everything as proposals with status `PENDING_REVIEW`. Confidence below 0.6 is flagged in the console.
 
-Approving a proposal puts an *action job* on the queue; the worker then performs it with retries. Ticket statuses: `NEW → TRIAGING → PENDING_REVIEW → RESOLVED | ESCALATED`, plus `NEEDS_MANUAL_TRIAGE`.
+Approving a proposal puts an *action job* on the queue; the worker then performs it with retries. Ticket statuses: `NEW → TRIAGING → PENDING_REVIEW → RESOLVED | ESCALATED`, plus `NEEDS_MANUAL_TRIAGE`. The full transition table (enforced by `TicketStatus.canTransitionTo`):
+
+| From | Allowed next statuses |
+|---|---|
+| `NEW` | `TRIAGING` |
+| `TRIAGING` | `PENDING_REVIEW`, `NEEDS_MANUAL_TRIAGE` |
+| `NEEDS_MANUAL_TRIAGE` | `PENDING_REVIEW` (an agent triaged it by hand), `ESCALATED` |
+| `PENDING_REVIEW` | `RESOLVED`, `ESCALATED` |
+| `RESOLVED`, `ESCALATED` | none (final) |
 
 ### 4.2 Data model
 

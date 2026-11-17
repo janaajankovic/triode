@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -311,13 +313,17 @@ class TicketTest {
         }
 
         @Test
-        void equalityIgnoresStatus() {
+        void hashCodeIsStableAcrossStatusChanges() {
+            // Tickets can sit in hash-based collections while their status changes, so the hash must not move.
             Ticket ticket = newTicket();
             int hashBefore = ticket.hashCode();
+            Set<Ticket> tickets = new HashSet<>(Set.of(ticket));
 
             ticket.startTriage();
+            ticket.completeTriage();
 
             assertThat(ticket.hashCode()).isEqualTo(hashBefore);
+            assertThat(tickets).contains(ticket);
         }
 
         @ParameterizedTest
