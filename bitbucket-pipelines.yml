@@ -3,20 +3,38 @@
 # Free plan: 50 build minutes/month, so run `./mvnw verify` locally before pushing.
 # PR builds run on the self-hosted runner on the maintainer's laptop (TRI-14), which uses
 # no build minutes. If it is offline the PR step fails at once; then run the custom
-# pipeline `test-in-cloud` on the branch (see README, "CI runner").
-image: maven:3.9-eclipse-temurin-25
+# pipeline `test-in-cloud` on the branch (see README, "CI runner"). With the three
+# quality-gate steps (TRI-22) a cloud run costs about 3-4 build minutes.
+#
+# Gates, in order (docs/engineering-standards.md): secret scan (fast, fails early),
+# build and test, dependency scan. Every image is pinned by version AND digest so a
+# re-pushed tag cannot change what runs; update tag and digest together.
 
 definitions:
   caches:
     maven-wrapper: ~/.m2/wrapper
+    trivy: ~/.cache/trivy
   services:
     docker:
       # A 1x step has 4 GB in total; one Postgres container needs far less than this,
       # which leaves the rest for Maven and the forked Surefire JVM.
       memory: 1024
   steps:
+    - step: &secret-scan
+        name: Secret scan
+        image: zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        max-time: 5
+        # Full history, so a secret that was committed and later deleted is still found.
+        clone:
+          depth: full
+        script:
+          # The clone belongs to another user than the step container; let git read it.
+          - git config --global --add safe.directory "$BITBUCKET_CLONE_DIR"
+          - gitleaks git --redact --verbose --exit-code 1 .
     - step: &test
         name: Build and test
+        # JDK only: the Maven wrapper (with SHA-256 checks) provides Maven.
+        image: eclipse-temurin:25.0.5_8-jdk-noble@sha256:80f67fb3d6f76e2d817d98a4cc2a9cf05f054d4e6adc5e2144bde671d722e63f
         # Stop a hung run (e.g. a stuck Testcontainers start) before it burns the monthly minutes.
         max-time: 15
         caches: [maven, maven-wrapper]
@@ -27,14 +45,32 @@ definitions:
           - cd backend && ./mvnw -B -ntp verify
         artifacts:
           - backend/target/site/jacoco/**
+    - step: &dependency-scan
+        name: Dependency scan
+        image: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        max-time: 10
+        # The maven cache lets Trivy read POMs locally instead of fetching them from Maven Central.
+        caches: [maven, trivy]
+        script:
+          # Fails on HIGH/CRITICAL findings in compile/runtime dependencies. Accepted findings
+          # go in .trivyignore.yaml with a reason and a review date.
+          - trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml backend
 
 pipelines:
   pull-requests:
     '**':
       - step:
+          <<: *secret-scan
+          runs-on: [self.hosted, linux]
+      - step:
           <<: *test
           runs-on: [self.hosted, linux]
-  # Manual fallback when the runner is offline: the same step on Bitbucket's cloud (~2 build minutes).
+      - step:
+          <<: *dependency-scan
+          runs-on: [self.hosted, linux]
+  # Manual fallback when the runner is offline: the same steps on Bitbucket's cloud.
   custom:
     test-in-cloud:
+      - step: *secret-scan
       - step: *test
+      - step: *dependency-scan
