@@ -290,6 +290,8 @@ Example: *TRI-14 — As a support agent, I want each new ticket classified by ca
 - [ ] Code reviewed in a pull request
 - [ ] Unit and integration tests pass in CI
 - [ ] No new Checkstyle or Spotless issues
+- [ ] No new warnings
+- [ ] Security checklist considered
 - [ ] Docs or ADR updated if behaviour or design changed
 - [ ] Deployed to staging and smoke-tested (from Sprint 2)
 
