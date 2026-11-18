@@ -22,6 +22,7 @@ public final class Ticket {
     private final UUID customerId;
     private final String subject;
     private final String body;
+    // The only mutable field. If you add a mutable field, update JpaTicketRepository.updatedEntity so it is saved.
     private TicketStatus status;
     private final Instant createdAt;
     private final Long version;

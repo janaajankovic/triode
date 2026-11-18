@@ -10,10 +10,13 @@ public interface TicketRepository {
 
     /**
      * Saves a new ticket (version null) or the changes to a loaded one, and returns the saved ticket with its new
-     * version. The argument is left unchanged, so callers continue with the returned ticket.
+     * version.
      *
-     * <p>If the stored ticket has changed since this one was loaded (its version is stale) or no longer exists, the
-     * save fails with Spring's optimistic locking exception instead of overwriting the newer state.
+     * <p>The argument is left unchanged, so callers must continue with the returned ticket. Saving the same new
+     * ticket a second time fails, because its id is already stored.
+     *
+     * @throws StaleTicketException if the stored ticket was changed since this one was loaded (its version is stale)
+     *     or no longer exists; the newer state is never overwritten
      */
     Ticket save(Ticket ticket);
 

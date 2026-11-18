@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.triode.TestcontainersConfiguration;
 import dev.triode.tickets.domain.InvalidTicketException;
+import dev.triode.tickets.domain.StaleTicketException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
 import dev.triode.tickets.domain.TicketRepository;
@@ -21,6 +22,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * {@link JpaTicketRepository} against PostgreSQL + pgvector with the Flyway schema. No test-managed transaction:
@@ -38,6 +42,12 @@ class JpaTicketRepositoryTests {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private TicketJpaRepository jpa;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private static Ticket newTicket() {
         return Ticket.submit(UUID.randomUUID(), "Cannot log in 😀", "The login page shows an error.", CLOCK);
@@ -91,10 +101,43 @@ class JpaTicketRepositoryTests {
         tickets.save(first);
         second.startTriage();
 
-        assertThatThrownBy(() -> tickets.save(second)).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThatThrownBy(() -> tickets.save(second))
+                .isInstanceOf(StaleTicketException.class)
+                .hasMessage("Ticket " + id + " was changed or deleted by someone else");
         Ticket loaded = tickets.findById(id).orElseThrow();
         assertThat(loaded.getStatus()).isEqualTo(TicketStatus.NEEDS_MANUAL_TRIAGE);
         assertThat(loaded.getVersion()).isEqualTo(1L);
+    }
+
+    /**
+     * The race the version pre-check cannot see: another transaction commits after the adapter has read the row.
+     * The entity with version 0 is already in the persistence context, so the pre-check passes; only Hibernate's
+     * {@code UPDATE ... WHERE version = 0} notices, and the adapter translates that failure.
+     */
+    @Test
+    void concurrentCommitAfterPreCheckIsRejected() {
+        Ticket saved = tickets.save(newTicket());
+        saved.startTriage();
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        TransactionTemplate separate = new TransactionTemplate(transactionManager);
+        separate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        assertThatThrownBy(() -> outer.executeWithoutResult(status -> {
+                    // Puts the version-0 entity in this transaction's persistence context.
+                    assertThat(jpa.findById(saved.getId().value()).orElseThrow().getVersion())
+                            .isZero();
+                    // Another writer commits version 1 in its own transaction.
+                    separate.executeWithoutResult(inner -> jdbc.update(
+                            "update tickets set version = 1 where id = ?",
+                            saved.getId().value()));
+                    tickets.save(saved);
+                }))
+                .isInstanceOf(StaleTicketException.class)
+                .hasCauseInstanceOf(OptimisticLockingFailureException.class);
+
+        Ticket loaded = tickets.findById(saved.getId()).orElseThrow();
+        assertThat(loaded.getVersion()).isEqualTo(1L);
+        assertThat(loaded.getStatus()).isEqualTo(TicketStatus.NEW);
     }
 
     @Test
@@ -104,7 +147,18 @@ class JpaTicketRepositoryTests {
 
         saved.startTriage();
 
-        assertThatThrownBy(() -> tickets.save(saved)).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThatThrownBy(() -> tickets.save(saved)).isInstanceOf(StaleTicketException.class);
+    }
+
+    @Test
+    void savingTheSameNewTicketTwiceFails() {
+        Ticket submitted = newTicket();
+        tickets.save(submitted);
+
+        // The argument keeps version null; callers must continue with the returned ticket instead.
+        assertThatThrownBy(() -> tickets.save(submitted)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(tickets.findById(submitted.getId()).orElseThrow().getVersion())
+                .isZero();
     }
 
     @Test
