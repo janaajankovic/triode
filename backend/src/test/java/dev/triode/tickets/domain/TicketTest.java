@@ -75,6 +75,16 @@ class TicketTest {
             assertThat(ticket.getBody()).isEqualTo(BODY);
             assertThat(ticket.getStatus()).isEqualTo(TicketStatus.NEW);
             assertThat(ticket.getCreatedAt()).isEqualTo(NOW);
+            assertThat(ticket.getVersion()).isNull();
+        }
+
+        @Test
+        void truncatesCreatedAtToMicros() {
+            Clock nanoClock = Clock.fixed(Instant.parse("2026-11-17T10:00:00.123456789Z"), ZoneOffset.UTC);
+
+            Ticket ticket = Ticket.submit(CUSTOMER, SUBJECT, BODY, nanoClock);
+
+            assertThat(ticket.getCreatedAt()).isEqualTo(Instant.parse("2026-11-17T10:00:00.123456Z"));
         }
 
         @Test
@@ -166,15 +176,113 @@ class TicketTest {
                             .getSubject())
                     .isEqualTo(subject);
         }
+    }
 
-        private static void assertInvalid(Runnable submit, String field, String reason) {
-            InvalidTicketException exception = catchThrowableOfType(InvalidTicketException.class, submit::run);
+    @Nested
+    class Reconstitute {
 
-            assertThat(exception).isNotNull();
-            assertThat(exception.getField()).isEqualTo(field);
-            assertThat(exception.getReason()).isEqualTo(reason);
-            assertThat(exception).hasMessage("Invalid ticket " + field + ": " + reason);
+        private static final TicketId ID = new TicketId(UUID.fromString("0b6e3e4c-2f1a-4c55-9d8e-7f1a2b3c4d5e"));
+        private static final Instant STORED_AT = Instant.parse("2026-11-17T10:00:00.123456Z");
+        private static final long VERSION = 7L;
+        private static final String NULL = "must not be null";
+
+        private static Ticket stored(String subject, String body) {
+            return Ticket.reconstitute(ID, CUSTOMER, subject, body, TicketStatus.NEW, STORED_AT, VERSION);
         }
+
+        @ParameterizedTest
+        @EnumSource(TicketStatus.class)
+        void rebuildsTicketInEveryStatus(TicketStatus status) {
+            Ticket ticket = Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, status, STORED_AT, VERSION);
+
+            assertThat(ticket.getId()).isEqualTo(ID);
+            assertThat(ticket.getCustomerId()).isEqualTo(CUSTOMER);
+            assertThat(ticket.getSubject()).isEqualTo(SUBJECT);
+            assertThat(ticket.getBody()).isEqualTo(BODY);
+            assertThat(ticket.getStatus()).isEqualTo(status);
+            assertThat(ticket.getCreatedAt()).isEqualTo(STORED_AT);
+            assertThat(ticket.getVersion()).isEqualTo(VERSION);
+        }
+
+        @Test
+        void reconstitutedTicketKeepsTransitionRules() {
+            Ticket resolved =
+                    Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.RESOLVED, STORED_AT, VERSION);
+            Ticket pending =
+                    Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.PENDING_REVIEW, STORED_AT, VERSION);
+
+            assertThatThrownBy(resolved::escalate).isInstanceOf(InvalidStatusTransitionException.class);
+            pending.resolve();
+            assertThat(pending.getStatus()).isEqualTo(TicketStatus.RESOLVED);
+        }
+
+        @Test
+        void changesNoValue() {
+            Instant withNanos = Instant.parse("2026-11-17T10:00:00.123456789Z");
+
+            Ticket ticket = Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.NEW, withNanos, 0L);
+
+            assertThat(ticket.getCreatedAt()).isEqualTo(withNanos);
+            assertThat(ticket.getVersion()).isZero();
+        }
+
+        @Test
+        void rejectsNullValues() {
+            TicketStatus s = TicketStatus.NEW;
+            assertInvalid(() -> Ticket.reconstitute(null, CUSTOMER, SUBJECT, BODY, s, STORED_AT, 0), "id", NULL);
+            assertInvalid(() -> Ticket.reconstitute(ID, null, SUBJECT, BODY, s, STORED_AT, 0), "customerId", NULL);
+            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, null, BODY, s, STORED_AT, 0), "subject", NULL);
+            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, null, s, STORED_AT, 0), "body", NULL);
+            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, null, STORED_AT, 0), "status", NULL);
+            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, s, null, 0), "createdAt", NULL);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"", "   ", "\t\n"})
+        void rejectsBlankValues(String blank) {
+            assertInvalid(() -> stored(blank, BODY), "subject", "must not be blank");
+            assertInvalid(() -> stored(SUBJECT, blank), "body", "must not be blank");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {" Cannot log in", "Cannot log in ", "Cannot log in\n", "\tCannot log in"})
+        void rejectsUnstrippedValues(String unstripped) {
+            String reason = "must not have leading or trailing whitespace";
+            assertInvalid(() -> stored(unstripped, BODY), "subject", reason);
+            assertInvalid(() -> stored(SUBJECT, unstripped), "body", reason);
+        }
+
+        @Test
+        void rejectsTooLongValues() {
+            assertInvalid(
+                    () -> stored("a".repeat(Ticket.MAX_SUBJECT_LENGTH + 1), BODY),
+                    "subject",
+                    "must be at most 255 characters");
+            assertInvalid(
+                    () -> stored(SUBJECT, "a".repeat(Ticket.MAX_BODY_LENGTH + 1)),
+                    "body",
+                    "must be at most 10000 characters");
+        }
+
+        @Test
+        void acceptsValuesOfMaxLength() {
+            String subject = "😀".repeat(Ticket.MAX_SUBJECT_LENGTH);
+            String body = "a".repeat(Ticket.MAX_BODY_LENGTH);
+
+            Ticket ticket = stored(subject, body);
+
+            assertThat(ticket.getSubject()).isEqualTo(subject);
+            assertThat(ticket.getBody()).isEqualTo(body);
+        }
+    }
+
+    private static void assertInvalid(Runnable action, String field, String reason) {
+        InvalidTicketException exception = catchThrowableOfType(InvalidTicketException.class, action::run);
+
+        assertThat(exception).isNotNull();
+        assertThat(exception.getField()).isEqualTo(field);
+        assertThat(exception.getReason()).isEqualTo(reason);
+        assertThat(exception).hasMessage("Invalid ticket " + field + ": " + reason);
     }
 
     @Nested

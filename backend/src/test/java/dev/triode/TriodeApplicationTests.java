@@ -35,4 +35,11 @@ class TriodeApplicationTests {
                 jdbc.queryForObject("select success from flyway_schema_history where version = '1'", Boolean.class);
         assertThat(applied).isTrue();
     }
+
+    @Test
+    void flywayCreatesTicketsTable() {
+        Boolean applied =
+                jdbc.queryForObject("select success from flyway_schema_history where version = '2'", Boolean.class);
+        assertThat(applied).isTrue();
+    }
 }
