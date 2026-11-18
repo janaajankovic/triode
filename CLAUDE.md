@@ -13,6 +13,10 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - `domain` packages are pure Java: no Spring, AWS, Spring AI or JPA (`jakarta.persistence`) imports.
   JPA entities live in `infra` and map to the domain objects. `ArchitectureTests` enforces this.
 - Schema changes only via Flyway migrations in `backend/src/main/resources/db/migration`; never edit an applied migration.
+- `spring.jpa.hibernate.ddl-auto=validate`: every JPA entity on the classpath needs a matching Flyway migration,
+  including entities a library registers itself (e.g. Spring Modulith's `event_publication`); otherwise the app won't start.
+- `spring-modulith-starter-jpa` was removed in TRI-16. The story that adds the first module event (outbox, ADR 0003)
+  re-adds it together with a migration for `event_publication`.
 - Every LLM call goes through `LlmGateway`. Prompts live in versioned files in `resources/prompts` (e.g. `classify.v1.st`).
 - Errors are RFC 9457 problem details from one global exception handler.
 
