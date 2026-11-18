@@ -1,0 +1,29 @@
+package dev.triode.tickets.domain;
+
+import java.util.Optional;
+
+/**
+ * Port for storing tickets. The domain defines what it needs; the persistence adapter in the module's infra package
+ * implements it.
+ */
+public interface TicketRepository {
+
+    /**
+     * Saves a new ticket (version null) or the changes to a loaded one, and returns the saved ticket with its new
+     * version.
+     *
+     * <p>The argument is left unchanged, so callers must continue with the returned ticket. Saving the same new
+     * ticket a second time fails, because its id is already stored.
+     *
+     * @throws StaleTicketException if the stored ticket was changed since this one was loaded (its version is stale)
+     *     or no longer exists; the newer state is never overwritten
+     */
+    Ticket save(Ticket ticket);
+
+    /**
+     * Loads a ticket by id.
+     *
+     * @throws InvalidTicketException if the stored data breaks the ticket's field rules
+     */
+    Optional<Ticket> findById(TicketId id);
+}

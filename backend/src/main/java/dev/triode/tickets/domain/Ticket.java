@@ -2,6 +2,7 @@ package dev.triode.tickets.domain;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -21,21 +22,32 @@ public final class Ticket {
     private final UUID customerId;
     private final String subject;
     private final String body;
+    // The only mutable field. If you add a mutable field, update JpaTicketRepository.updatedEntity so it is saved.
     private TicketStatus status;
     private final Instant createdAt;
+    private final Long version;
 
-    private Ticket(TicketId id, UUID customerId, String subject, String body, TicketStatus status, Instant createdAt) {
+    private Ticket(
+            TicketId id,
+            UUID customerId,
+            String subject,
+            String body,
+            TicketStatus status,
+            Instant createdAt,
+            Long version) {
         this.id = id;
         this.customerId = customerId;
         this.subject = subject;
         this.body = body;
         this.status = status;
         this.createdAt = createdAt;
+        this.version = version;
     }
 
     /**
      * Creates a new ticket in status NEW. Subject and body are stripped of surrounding whitespace, must not be blank
-     * and must fit {@link #MAX_SUBJECT_LENGTH} and {@link #MAX_BODY_LENGTH}.
+     * and must fit {@link #MAX_SUBJECT_LENGTH} and {@link #MAX_BODY_LENGTH}. {@code createdAt} is truncated to
+     * microseconds, the precision PostgreSQL stores, so a saved ticket loads back with the same value.
      *
      * @throws NullPointerException if any argument is null
      * @throws InvalidTicketException if subject or body is blank or too long
@@ -48,21 +60,71 @@ public final class Ticket {
         return new Ticket(
                 TicketId.generate(),
                 customerId,
-                requireText("subject", subject, MAX_SUBJECT_LENGTH),
-                requireText("body", body, MAX_BODY_LENGTH),
+                checkText("subject", subject.strip(), MAX_SUBJECT_LENGTH),
+                checkText("body", body.strip(), MAX_BODY_LENGTH),
                 TicketStatus.NEW,
-                clock.instant());
+                clock.instant().truncatedTo(ChronoUnit.MICROS),
+                null);
     }
 
-    private static String requireText(String field, String value, int maxLength) {
-        String stripped = value.strip();
-        if (stripped.isEmpty()) {
+    /**
+     * Rebuilds a ticket from persisted state. Only for loading saved tickets; new tickets are created with
+     * {@link #submit(UUID, String, String, Clock)}.
+     *
+     * <p>Accepts any status and changes no value. The field rules are checked again: stored subject and body must
+     * already be stripped, non-blank and within their limits.
+     *
+     * @throws InvalidTicketException if any value is null or breaks a field rule (invalid stored data)
+     */
+    public static Ticket reconstitute(
+            TicketId id,
+            UUID customerId,
+            String subject,
+            String body,
+            TicketStatus status,
+            Instant createdAt,
+            long version) {
+        requireStored("id", id);
+        requireStored("customerId", customerId);
+        requireStored("subject", subject);
+        requireStored("body", body);
+        requireStored("status", status);
+        requireStored("createdAt", createdAt);
+        return new Ticket(
+                id,
+                customerId,
+                checkStoredText("subject", subject, MAX_SUBJECT_LENGTH),
+                checkStoredText("body", body, MAX_BODY_LENGTH),
+                status,
+                createdAt,
+                version);
+    }
+
+    private static void requireStored(String field, Object value) {
+        if (value == null) {
+            throw new InvalidTicketException(field, "must not be null");
+        }
+    }
+
+    private static String checkStoredText(String field, String value, int maxLength) {
+        if (value.isBlank()) {
             throw new InvalidTicketException(field, "must not be blank");
         }
-        if (stripped.codePointCount(0, stripped.length()) > maxLength) {
+        if (!value.equals(value.strip())) {
+            throw new InvalidTicketException(field, "must not have leading or trailing whitespace");
+        }
+        return checkText(field, value, maxLength);
+    }
+
+    /** Checks an already stripped value against the blank and length rules. */
+    private static String checkText(String field, String value, int maxLength) {
+        if (value.isEmpty()) {
+            throw new InvalidTicketException(field, "must not be blank");
+        }
+        if (value.codePointCount(0, value.length()) > maxLength) {
             throw new InvalidTicketException(field, "must be at most " + maxLength + " characters");
         }
-        return stripped;
+        return value;
     }
 
     /** NEW → TRIAGING. */
@@ -119,6 +181,14 @@ public final class Ticket {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /**
+     * Version of the stored row this ticket was loaded from or saved as, used for optimistic locking; null for a
+     * ticket that was never saved.
+     */
+    public Long getVersion() {
+        return version;
     }
 
     @Override
