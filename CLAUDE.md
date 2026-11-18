@@ -4,6 +4,7 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 
 - `docs/plan.md` — project plan: scope, tech stack (§3), architecture and data model (§4), code organisation (§5), pipeline (§7.4)
 - `docs/adr/` — architecture decision records; follow them, and propose a new ADR rather than silently deviating
+- `docs/engineering-standards.md` — baselines (ASVS L1, OWASP LLM Top 10, secrets, dependencies, API, tests) and which gate or review enforces each
 
 ## Stack and structure
 - Java 25, Spring Boot 4.1, Spring Modulith 2.1, Spring AI 2.0 (later), Maven wrapper in `backend/`.
@@ -40,11 +41,14 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - PR description: What / Why (Jira: TRI-n) / How it was tested / Explain-back (empty heading for the user) / Notes.
 
 ## CI (Bitbucket Pipelines)
-- Free plan: 50 build minutes/month; a cloud run costs about 2 of them. Only pull requests trigger a pipeline (each push to an open PR
-  is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on the step.
+- Free plan: 50 build minutes/month; a cloud run costs about 3–4 of them. Only pull requests trigger a pipeline (each push to an open PR
+  is a run); keep it that way (no `default:`/`branches:` sections) and keep `max-time` on every step.
   Push only after a green local `verify`, and batch commits.
-- The PR step has `runs-on: [self.hosted, linux]` (laptop runner, 0 build minutes); the manual custom pipeline
-  `test-in-cloud` runs the same step in the cloud when the runner is offline.
+- PR steps, in order: secret scan (gitleaks) → build and test → dependency scan (Trivy). Each has
+  `runs-on: [self.hosted, linux]` (laptop runner, 0 build minutes); the manual custom pipeline
+  `test-in-cloud` runs the same steps in the cloud when the runner is offline.
+- Images are pinned as `name:tag@sha256:digest`; update tag and digest together (check with `docker buildx imagetools inspect`).
+  The build image is JDK-only (no curl/wget/unzip): the Maven wrapper is the `source` type, which downloads with Java.
 - Runner: Docker container `triode-runner` (setup and Docker Desktop fixes in README "CI runner"). Before pushing, check
   `docker ps --filter name=triode-runner`; if it isn't running, ask the user to `docker start triode-runner` (an offline
   runner fails the PR step at once). Never ask for or handle the runner's UUIDs, client ID or secret.
