@@ -1,10 +1,15 @@
 package dev.triode.tickets.domain;
 
+import java.io.Serial;
+
 /**
  * A ticket could not be saved because the stored ticket was changed or deleted after this copy was loaded
  * (optimistic locking). Reload the ticket and apply the change again.
  */
 public class StaleTicketException extends TicketDomainException {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     private final TicketId ticketId;
 

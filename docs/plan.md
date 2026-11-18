@@ -110,6 +110,8 @@ The core is Java 25 + Spring Boot 4.1 + Spring AI 2.0, deployed on AWS ECS Farga
 | Spotless + Checkstyle | One code style, enforced automatically |
 | Custom eval harness (JUnit `@Tag("eval")`) | Accuracy on the labeled ticket set; runs on demand and before releases |
 
+These are enforced, not just reported: Error Prone with `-Werror`, the 80 % line-coverage gate on domain packages, gitleaks and Trivy all fail the build or the pull-request pipeline (see `docs/engineering-standards.md`).
+
 **Infrastructure and operations**
 
 | Area | Choice | Why |
@@ -290,6 +292,8 @@ Example: *TRI-14 — As a support agent, I want each new ticket classified by ca
 - [ ] Code reviewed in a pull request
 - [ ] Unit and integration tests pass in CI
 - [ ] No new Checkstyle or Spotless issues
+- [ ] No new warnings
+- [ ] Security checklist considered
 - [ ] Docs or ADR updated if behaviour or design changed
 - [ ] Deployed to staging and smoke-tested (from Sprint 2)
 
@@ -362,7 +366,7 @@ Write an ADR (`docs/adr/0002-trunk-based-development.md`) explaining why you cho
 
 | Trigger | Steps | Roughly |
 | --- | --- | --- |
-| Pull request | Build, unit + integration tests (Testcontainers), style checks | about 2 min (1 min 52 s measured) |
+| Pull request | Secret scan (gitleaks); build with -Werror and Error Prone, unit + integration tests (Testcontainers), coverage gate; dependency scan (Trivy) | about 2 min (1 min 52 s measured) |
 | Merge to `main` | Same tests, build Docker image, push to ECR, deploy to **staging**, smoke test | 8–10 min |
 | Tag `v*` | Deploy the same image to **production** after a manual approval | 2–3 min |
 | On demand | Eval suite against real Bedrock (costs money, so never automatic) | 3–5 min |
@@ -417,7 +421,7 @@ pipelines:
             - ./scripts/deploy.sh prod
 ```
 
-The live file is `bitbucket-pipelines.yml` in the repo, which uses the Maven wrapper (`./mvnw`) with its own cache for `~/.m2/wrapper` and saves the JaCoCo report as an artifact. TRI-13 added `max-time: 15` so a hung run can't use up the monthly minutes. Only the pull-request trigger exists until Sprint 2 adds the `main` and tag steps.
+The live file is `bitbucket-pipelines.yml` in the repo. A pull request runs three steps on the self-hosted runner: secret scan, build and test, dependency scan. Every image is pinned by digest, and every step has its own `max-time`, so a hung run can't use up the monthly minutes. The manual `test-in-cloud` pipeline runs the same steps on Bitbucket's cloud when the runner is offline (about 3–4 build minutes). Details are in `docs/engineering-standards.md`. The `main` and tag steps come in Sprint 2.
 
 ### 7.5 Secrets and AWS access
 

@@ -51,11 +51,12 @@ cd backend
 
 - Jira board and burndown: _TODO: screenshot_
 - Branching: trunk-based, short-lived `feature/TRI-<n>-…` branches, squash-merged via pull requests ([ADR 0002](docs/adr/0002-trunk-based-development.md))
+- Quality gates: [engineering standards](docs/engineering-standards.md) — what the build, the pipeline and the review enforce
 - Pipeline: _TODO: diagram_ (pull request → tests; merge to `main` → staging; tag `v*` → production after approval)
 
 ## CI runner
 
-Pull-request builds run on a self-hosted Bitbucket runner (Linux Docker, x86_64) on the maintainer's laptop, so they use no build minutes from the Free plan's 50. The step is the same as in the cloud: `maven:3.9-eclipse-temurin-25`, a Docker service for Testcontainers (Ryuk disabled), `max-time: 15`.
+Pull-request builds run on a self-hosted Bitbucket runner (Linux Docker, x86_64) on the maintainer's laptop, so they use no build minutes from the Free plan's 50. The steps are the same as in the cloud, each with a `max-time` and an image pinned by version and digest: secret scan (gitleaks), build and test (Temurin JDK 25, a Docker service for Testcontainers with Ryuk disabled), dependency scan (Trivy). See [engineering standards](docs/engineering-standards.md).
 
 **Register once:** Repository settings → Runners → Add runner → System and architecture *Linux Docker (x86_64)*, labels `self.hosted` and `linux`. The dialog shows a `docker container run` command with your UUIDs and OAuth credentials.
 
@@ -98,7 +99,7 @@ If step logs stop appearing in the Bitbucket UI, the fallback is a Windows runne
 
 **After a reboot:** start Docker Desktop, then `docker start triode-runner`. Stop it with `docker stop triode-runner` when you are done. The container keeps its configuration, so no secret is needed again.
 
-**When the laptop is off:** a step with `runs-on` fails at once if no runner is online (it is not queued). Either start the runner and re-run the step, or run the same step in the cloud (about 2 build minutes): Pipelines → Run pipeline → choose the branch → `test-in-cloud`. The result attaches to the commit, so the pull request shows it. Or run `./mvnw verify` locally and leave the PR build until the runner is back.
+**When the laptop is off:** a step with `runs-on` fails at once if no runner is online (it is not queued). Either start the runner and re-run the step, or run the same steps in the cloud (about 3–4 build minutes): Pipelines → Run pipeline → choose the branch → `test-in-cloud`. The result attaches to the commit, so the pull request shows it. Or run `./mvnw verify` locally and leave the PR build until the runner is back.
 
 **Check that a build used 0 cloud build minutes:**
 1. On the pipeline run, open the step: its details should name the runner you registered, not Bitbucket's cloud. Also check `docker logs triode-runner`, which shows the step being picked up.

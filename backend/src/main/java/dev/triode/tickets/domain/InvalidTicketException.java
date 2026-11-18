@@ -1,7 +1,12 @@
 package dev.triode.tickets.domain;
 
+import java.io.Serial;
+
 /** A ticket field has a value the domain does not accept, for example a blank subject. */
 public class InvalidTicketException extends TicketDomainException {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     private final String field;
     private final String reason;

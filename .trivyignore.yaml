@@ -1,0 +1,16 @@
+# Accepted dependency-scan findings (Trivy, see docs/engineering-standards.md).
+# Only for false positives or findings that cannot be fixed by upgrading yet.
+# Every entry needs:
+#   id:         the CVE / GHSA id
+#   purls:      the affected package, e.g. "pkg:maven/org.example/lib@1.2.3"
+#   statement:  one line: why it does not affect Triode, or why it cannot be fixed yet
+#   expired_at: review date (yyyy-mm-dd), at most 90 days ahead; after it the entry
+#               stops applying and the build fails again until someone re-checks it
+#
+# Example:
+#   vulnerabilities:
+#     - id: CVE-2099-12345
+#       purls: ["pkg:maven/org.example/lib@1.2.3"]
+#       statement: Affects the XML parser only; Triode never parses XML with this library.
+#       expired_at: 2027-02-15
+vulnerabilities: []
