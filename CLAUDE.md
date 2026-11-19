@@ -43,8 +43,7 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
   (`type(scope): TRI-n summary`, e.g. `feat(triage): TRI-14 classify tickets with structured output`), then wait and
   commit with exactly the user's text. No attribution lines in commits or PRs.
 - Lessons for CLAUDE.md go into the story's own PR as the last commit, never a separate PR.
-- PR description: What / Why (Jira: TRI-n) / How it was tested / Definition of Done (unticked checklist of the
-  plan §6.2 items; the user ticks them before merging) / Explain-back (empty heading for the user) / Notes.
+- PR description: What / Why (Jira: TRI-n) / How it was tested / Explain-back (empty heading for the user) / Notes.
 
 ## CI (Bitbucket Pipelines)
 - Free plan: 50 build minutes/month; a cloud run costs about 3–4 of them. Only pull requests trigger a pipeline (each push to an open PR

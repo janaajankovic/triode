@@ -287,7 +287,7 @@ Example: *TRI-14 — As a support agent, I want each new ticket classified by ca
 
 **Estimate** in story points with 1, 2, 3, 5, 8. Split anything bigger than 8. **Bugs** you find get a Bug issue with steps to reproduce, and the fix branch links to it.
 
-**Definition of Done** (lives here and as a checklist in every PR description, where each change is actually checked):
+**Definition of Done** (applied to every story before merging; the pr-reviewer agent checks each PR against it):
 
 - [ ] Code reviewed in a pull request
 - [ ] Unit and integration tests pass in CI
@@ -335,7 +335,6 @@ Bitbucket holds the code, the pull requests and the CI/CD pipeline, all linked t
 ## What
 ## Why (Jira: TRI-XX)
 ## How it was tested
-## Definition of Done
 ## Explain-back
 ## Notes
 ```
