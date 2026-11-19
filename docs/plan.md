@@ -340,7 +340,7 @@ Bitbucket holds the code, the pull requests and the CI/CD pipeline, all linked t
 ## Notes
 ```
 
-8. **Mirror to GitHub** (recruiters search there): merges happen inside Bitbucket, so a second push URL would never carry the merged `main`. Instead, after each merge run `git pull`, then `git push github main --tags` from your own terminal, never from Claude Code (TRI-23). The GitHub README links back to Bitbucket for PRs, pipelines and Jira.
+8. **Mirror to GitHub** (recruiters search there): merges happen inside Bitbucket, so a second push URL would never carry the merged `main`. Instead, after each merge run `git switch main && git pull`, then `git push github main --tags` from your own terminal, never from Claude Code (TRI-23). The GitHub README links back to Bitbucket for PRs, pipelines and Jira.
 
 ### 7.2 Branching model: trunk-based
 
