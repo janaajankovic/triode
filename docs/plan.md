@@ -287,7 +287,7 @@ Example: *TRI-14 — As a support agent, I want each new ticket classified by ca
 
 **Estimate** in story points with 1, 2, 3, 5, 8. Split anything bigger than 8. **Bugs** you find get a Bug issue with steps to reproduce, and the fix branch links to it.
 
-**Definition of Done** (paste it into the board description):
+**Definition of Done** (applied to every story before merging; the pr-reviewer agent checks each PR against it):
 
 - [ ] Code reviewed in a pull request
 - [ ] Unit and integration tests pass in CI
@@ -339,7 +339,7 @@ Bitbucket holds the code, the pull requests and the CI/CD pipeline, all linked t
 ## Notes
 ```
 
-8. **Mirror to GitHub** (recruiters search there): add a second push URL with `git remote set-url --add --push origin <github-url>`, so one `git push` updates both.
+8. **Mirror to GitHub** (recruiters search there): merges happen inside Bitbucket, so a second push URL would never carry the merged `main`. Instead, after each merge run `git switch main && git pull`, then `git push github main --tags` from your own terminal, never from Claude Code (TRI-23). The GitHub README links back to Bitbucket for PRs, pipelines and Jira.
 
 ### 7.2 Branching model: trunk-based
 
