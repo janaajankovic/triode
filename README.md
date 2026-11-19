@@ -1,3 +1,5 @@
+> This is a mirror of https://bitbucket.org/janajankovic/triode, where development, pull requests, CI pipelines and Jira tracking happen.
+
 # Triode
 
 AI-assisted support ticket triage: Triode classifies incoming tickets, drafts a cited reply from a knowledge base and proposes Jira bugs, and a human approves every action.
