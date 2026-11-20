@@ -31,9 +31,10 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - Git remote: `git@ssh.bitbucket.org:janajankovic/triode.git` (Bitbucket moved SSH off `bitbucket.org` on 2026-11-12).
 - GitHub mirror: remote `github` = `git@github.com:janaajankovic/triode.git` (the GitHub username `janaajankovic`
   differs from the Bitbucket workspace `janajankovic`). After each merge the user runs `git switch main && git pull`,
-  then `git push github main --tags`, from her own terminal. Claude Code never pushes to GitHub. The Bash and PowerShell
+  then `git push github main --tags`, from her own terminal. Claude Code never pushes to GitHub. The Bash
   deny rules in `.claude/settings.json` are best-effort (e.g. `git -C <dir> push` slips past them); the real control is
   that only the user pushes to GitHub.
+- Claude Code uses Git Bash only; the PowerShell tool is denied in `.claude/settings.json`.
 - AWS: ADR 0009 and the note at the top of plan §8.1 override the older AWS steps in the plan (Frankfurt, root user, Identity Center).
 
 ## Workflow
