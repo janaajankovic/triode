@@ -1,5 +1,6 @@
 package dev.triode.tickets.infra;
 
+import dev.triode.tickets.domain.InvalidTicketException;
 import dev.triode.tickets.domain.StaleTicketException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
@@ -71,14 +72,23 @@ class JpaTicketRepository implements TicketRepository {
         return jpa.findById(id.value()).map(JpaTicketRepository::toDomain);
     }
 
+    /**
+     * Invalid stored data is our fault, not the caller's: the domain's {@link InvalidTicketException} (a client
+     * error) is wrapped in an {@link IllegalStateException}, which the API reports as a 500. {@code @Repository}
+     * exception translation turns it into a {@code DataAccessException} for callers; still a 500.
+     */
     private static Ticket toDomain(TicketEntity entity) {
-        return Ticket.reconstitute(
-                new TicketId(entity.getId()),
-                entity.getCustomerId(),
-                entity.getSubject(),
-                entity.getBody(),
-                entity.getStatus(),
-                entity.getCreatedAt(),
-                entity.getVersion());
+        try {
+            return Ticket.reconstitute(
+                    new TicketId(entity.getId()),
+                    entity.getCustomerId(),
+                    entity.getSubject(),
+                    entity.getBody(),
+                    entity.getStatus(),
+                    entity.getCreatedAt(),
+                    entity.getVersion());
+        } catch (InvalidTicketException e) {
+            throw new IllegalStateException("stored ticket " + entity.getId() + " is invalid", e);
+        }
     }
 }

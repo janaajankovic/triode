@@ -2,11 +2,13 @@ package dev.triode.tickets.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.triode.shared.api.DomainException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** Every Throwable is Serializable; domain exceptions must keep their details when serialized. */
@@ -38,6 +40,13 @@ class TicketDomainExceptionSerializationTest {
 
         assertThat(copy.getField()).isEqualTo("subject");
         assertThat(copy.getReason()).isEqualTo("must not be blank");
+        assertThat(copy.kind()).isEqualTo(DomainException.Kind.INVALID_INPUT);
+        assertThat(copy.details()).containsExactly(Map.entry("subject", "must not be blank"));
+    }
+
+    @Test
+    void staleTicketExceptionIsAConflict() throws Exception {
+        assertThat(roundTrip(new StaleTicketException(ID)).kind()).isEqualTo(DomainException.Kind.CONFLICT);
     }
 
     @SuppressWarnings("unchecked")

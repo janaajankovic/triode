@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import dev.triode.shared.api.DomainException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -96,19 +98,23 @@ class TicketTest {
         }
 
         @Test
-        void rejectsNullArguments() {
+        void rejectsNullCustomerIdAndClockAsProgrammingErrors() {
             assertThatNullPointerException()
                     .isThrownBy(() -> Ticket.submit(null, SUBJECT, BODY, CLOCK))
                     .withMessageContaining("customerId");
             assertThatNullPointerException()
-                    .isThrownBy(() -> Ticket.submit(CUSTOMER, null, BODY, CLOCK))
-                    .withMessageContaining("subject");
-            assertThatNullPointerException()
-                    .isThrownBy(() -> Ticket.submit(CUSTOMER, SUBJECT, null, CLOCK))
-                    .withMessageContaining("body");
-            assertThatNullPointerException()
                     .isThrownBy(() -> Ticket.submit(CUSTOMER, SUBJECT, BODY, null))
                     .withMessageContaining("clock");
+        }
+
+        @Test
+        void rejectsMissingSubjectAsInvalidInput() {
+            assertInvalid(() -> Ticket.submit(CUSTOMER, null, BODY, CLOCK), "subject", "is required");
+        }
+
+        @Test
+        void rejectsMissingBodyAsInvalidInput() {
+            assertInvalid(() -> Ticket.submit(CUSTOMER, SUBJECT, null, CLOCK), "body", "is required");
         }
 
         @ParameterizedTest
@@ -283,6 +289,8 @@ class TicketTest {
         assertThat(exception.getField()).isEqualTo(field);
         assertThat(exception.getReason()).isEqualTo(reason);
         assertThat(exception).hasMessage("Invalid ticket " + field + ": " + reason);
+        assertThat(exception.kind()).isEqualTo(DomainException.Kind.INVALID_INPUT);
+        assertThat(exception.details()).containsExactly(Map.entry(field, reason));
     }
 
     @Nested
@@ -391,6 +399,7 @@ class TicketTest {
             assertThat(exception.getTicketId()).isEqualTo(ticket.getId());
             assertThat(exception.getFrom()).isEqualTo(from);
             assertThat(exception.getTo()).isEqualTo(to);
+            assertThat(exception.kind()).isEqualTo(DomainException.Kind.CONFLICT);
             assertThat(ticket.getStatus()).isEqualTo(from);
         }
 

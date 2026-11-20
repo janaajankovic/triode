@@ -49,19 +49,17 @@ public final class Ticket {
      * and must fit {@link #MAX_SUBJECT_LENGTH} and {@link #MAX_BODY_LENGTH}. {@code createdAt} is truncated to
      * microseconds, the precision PostgreSQL stores, so a saved ticket loads back with the same value.
      *
-     * @throws NullPointerException if any argument is null
-     * @throws InvalidTicketException if subject or body is blank or too long
+     * @throws NullPointerException if customerId or clock is null (a programming error, not invalid input)
+     * @throws InvalidTicketException if subject or body is missing (null), blank or too long
      */
     public static Ticket submit(UUID customerId, String subject, String body, Clock clock) {
         Objects.requireNonNull(customerId, "customerId must not be null");
-        Objects.requireNonNull(subject, "subject must not be null");
-        Objects.requireNonNull(body, "body must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         return new Ticket(
                 TicketId.generate(),
                 customerId,
-                checkText("subject", subject.strip(), MAX_SUBJECT_LENGTH),
-                checkText("body", body.strip(), MAX_BODY_LENGTH),
+                checkText("subject", required("subject", subject).strip(), MAX_SUBJECT_LENGTH),
+                checkText("body", required("body", body).strip(), MAX_BODY_LENGTH),
                 TicketStatus.NEW,
                 clock.instant().truncatedTo(ChronoUnit.MICROS),
                 null);
@@ -98,6 +96,13 @@ public final class Ticket {
                 status,
                 createdAt,
                 version);
+    }
+
+    private static String required(String field, String value) {
+        if (value == null) {
+            throw new InvalidTicketException(field, "is required");
+        }
+        return value;
     }
 
     private static void requireStored(String field, Object value) {
