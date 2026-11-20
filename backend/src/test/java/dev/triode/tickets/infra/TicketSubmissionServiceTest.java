@@ -40,6 +40,8 @@ class TicketSubmissionServiceTest {
         assertThat(saved.getValue().getCustomerId()).isEqualTo(CUSTOMER);
         assertThat(saved.getValue().getSubject()).isEqualTo("Cannot log in");
         assertThat(view.id()).isEqualTo(saved.getValue().getId().value());
+        assertThat(view.subject()).isEqualTo("Cannot log in");
+        assertThat(view.body()).isEqualTo("Error page");
         assertThat(view.status()).isEqualTo(TicketStatus.NEW.name());
         assertThat(view.createdAt()).isEqualTo(NOW);
     }

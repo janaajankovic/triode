@@ -62,7 +62,18 @@ curl -i -X POST http://localhost:8080/api/v1/tickets \
   -d '{"subject": "Cannot log in", "body": "The login page shows an error after I enter my password."}'
 ```
 
-The answer is `201 Created` with a `Location: /api/v1/tickets/{id}` header and `{"id": "...", "status": "NEW", "createdAt": "..."}`.
+The answer is `201 Created` with a `Location: /api/v1/tickets/{id}` header and
+`{"id": "...", "subject": "...", "body": "...", "status": "NEW", "createdAt": "..."}`.
+
+Fetch it again with the same header (replace `{id}` with the id from the answer):
+
+```bash
+curl -i http://localhost:8080/api/v1/tickets/{id} \
+  -H 'X-Customer-Id: 3f2b8c1e-0000-4000-8000-000000000001'
+```
+
+The answer is `200 OK` with the same JSON. Another customer's ticket and an unknown id both return the same `404`,
+so the API does not reveal which ids exist. Responses with ticket content are sent with `Cache-Control: no-store`.
 Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details ([ADR 0010](docs/adr/0010-api-error-model.md)).
 The OpenAPI description is at http://localhost:8080/v3/api-docs (Swagger UI: http://localhost:8080/swagger-ui.html).
 

@@ -49,6 +49,15 @@ class TicketDomainExceptionSerializationTest {
         assertThat(roundTrip(new StaleTicketException(ID)).kind()).isEqualTo(DomainException.Kind.CONFLICT);
     }
 
+    @Test
+    void ticketNotFoundExceptionKeepsTheTicketIdAndKind() throws Exception {
+        TicketNotFoundException copy = roundTrip(new TicketNotFoundException(ID));
+
+        assertThat(copy.getTicketId()).isEqualTo(ID);
+        assertThat(copy.kind()).isEqualTo(DomainException.Kind.NOT_FOUND);
+        assertThat(copy).hasMessage("Ticket " + ID + " not found");
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T roundTrip(T value) throws IOException, ClassNotFoundException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
