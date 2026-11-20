@@ -1,10 +1,14 @@
 package dev.triode.shared.infra.web;
 
 import dev.triode.shared.api.DomainException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,8 +18,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.exc.StreamConstraintsException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
@@ -93,10 +101,55 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problem(HttpStatus.BAD_REQUEST, "Request body is not valid JSON for this endpoint", Map.of()));
     }
 
+    /**
+     * A path variable or request parameter that cannot be converted, for example a non-UUID ticket id. Spring's own
+     * detail echoes the rejected value, which is client input, so only the parameter name (from our code) is named.
+     * {@code instance} would default to the raw request path, which holds the rejected value too, so it is set to the
+     * matched route template instead (for example {@code /api/v1/tickets/%7Bid%7D}, the encoded {@code {id}}).
+     */
+    @Override
+    protected ResponseEntity<Object> handleTypeMismatch(
+            TypeMismatchException e, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        String name =
+                e instanceof MethodArgumentTypeMismatchException mismatch ? mismatch.getName() : e.getPropertyName();
+        String reason = UUID.class.equals(e.getRequiredType()) ? "must be a UUID" : "has an invalid value";
+        Map<String, String> errors = name != null ? Map.of(name, reason) : Map.of();
+        ProblemDetail body = problem(HttpStatus.BAD_REQUEST, "Invalid request parameter", errors);
+        if (request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST)
+                instanceof String route) {
+            body.setInstance(routeUri(route));
+        }
+        return ResponseEntity.badRequest().body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ProblemDetail> handleUnexpected(Exception e) {
         log.error("Unhandled exception", e);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", Map.of());
+    }
+
+    /**
+     * No controller route or static resource matches the path. Spring's own detail names the path, and the default
+     * {@code instance} is the raw request path; both are client input. The detail is generic and {@code instance} is an
+     * opaque occurrence id, logged at debug level with the method (not the path) so a report can be matched to the log.
+     */
+    @Override
+    protected ResponseEntity<Object> handleNoResourceFoundException(
+            NoResourceFoundException e, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        URI occurrence = URI.create("urn:uuid:" + UUID.randomUUID());
+        log.debug("No route for {} request ({})", e.getHttpMethod(), occurrence);
+        ProblemDetail body = problem(HttpStatus.NOT_FOUND, "No endpoint matches this request", Map.of());
+        body.setInstance(occurrence);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    /** A route template as a URI; the braces of its variables are percent-encoded ({@code {id}} → {@code %7Bid%7D}). */
+    private static URI routeUri(String route) {
+        try {
+            return new URI(null, null, route, null);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Route template is not a valid path: " + route, e);
+        }
     }
 
     private String tooLargeDetail() {

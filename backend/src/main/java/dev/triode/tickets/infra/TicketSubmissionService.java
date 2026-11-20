@@ -24,7 +24,6 @@ class TicketSubmissionService implements TicketSubmission {
     @Override
     @Transactional
     public TicketView submit(UUID customerId, String subject, String body) {
-        Ticket saved = tickets.save(Ticket.submit(customerId, subject, body, clock));
-        return new TicketView(saved.getId().value(), saved.getStatus().name(), saved.getCreatedAt());
+        return TicketViews.of(tickets.save(Ticket.submit(customerId, subject, body, clock)));
     }
 }

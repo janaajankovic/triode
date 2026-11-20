@@ -21,13 +21,13 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Full path over real HTTP (embedded Tomcat on a random port) to PostgreSQL: controller, shared error handling,
- * service, repository and Flyway schema. Uses the JDK HTTP client so a body can be sent chunked, without a
+ * Ticket API over real HTTP (embedded Tomcat on a random port) to PostgreSQL: controller, shared error handling,
+ * services, repository and Flyway schema. Uses the JDK HTTP client so a body can be sent chunked, without a
  * Content-Length.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class TicketSubmissionIntegrationTests {
+class TicketApiIntegrationTests {
 
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -70,6 +70,39 @@ class TicketSubmissionIntegrationTests {
                 .containsEntry("subject", "Cannot log in");
     }
 
+    @Test
+    void followingTheLocationHeaderReturnsTheSameTicketToItsCustomer() throws Exception {
+        UUID customer = UUID.randomUUID();
+        HttpResponse<String> created = submit(customer);
+        assertThat(created.statusCode()).isEqualTo(201);
+        String location = created.headers().firstValue("Location").orElseThrow();
+
+        HttpResponse<String> fetched = get(location, customer);
+
+        assertThat(fetched.statusCode()).isEqualTo(200);
+        assertThat(fetched.headers().firstValue("Cache-Control")).hasValue("no-store");
+        assertThat(json.readTree(fetched.body())).isEqualTo(json.readTree(created.body()));
+        assertThat(json.readTree(fetched.body()).get("subject").asString()).isEqualTo("Printer offline");
+    }
+
+    @Test
+    void anotherCustomerGets404LikeAnUnknownId() throws Exception {
+        HttpResponse<String> created = submit(UUID.randomUUID());
+        String location = created.headers().firstValue("Location").orElseThrow();
+        UUID stranger = UUID.randomUUID();
+        UUID unknownId = UUID.randomUUID();
+
+        HttpResponse<String> othersTicket = get(location, stranger);
+        HttpResponse<String> unknownTicket = get("/api/v1/tickets/" + unknownId, stranger);
+
+        assertThat(othersTicket.statusCode()).isEqualTo(404);
+        assertThat(othersTicket.headers().firstValue("Content-Type")).hasValue("application/problem+json");
+        String ticketId = location.substring(location.lastIndexOf('/') + 1);
+        assertThat(othersTicket.body().replace(ticketId, "{id}"))
+                .isEqualTo(unknownTicket.body().replace(unknownId.toString(), "{id}"));
+        assertThat(othersTicket.body()).doesNotContain("Printer offline");
+    }
+
     /** No Content-Length, so the size filter cannot see the size; Jackson's document-length limit stops it. */
     @Test
     void chunkedBodyOver128KbIs413() throws Exception {
@@ -108,5 +141,61 @@ class TicketSubmissionIntegrationTests {
         assertThat(request.path("properties").path("body").path("maxLength").asInt())
                 .isEqualTo(10_000);
         assertThat(request.path("required").toString()).contains("subject").contains("body");
+
+        JsonNode get = spec.path("paths").path("/api/v1/tickets/{id}").path("get");
+        assertThat(get.isMissingNode())
+                .as("GET /api/v1/tickets/{id} in the spec")
+                .isFalse();
+        assertThat(get.path("parameters").toString())
+                .contains("\"name\":\"X-Customer-Id\"")
+                .contains("\"name\":\"id\"");
+        for (String status : new String[] {"200", "400", "404"}) {
+            assertThat(get.path("responses").path(status).isMissingNode())
+                    .as("GET response " + status)
+                    .isFalse();
+        }
+        assertThat(get.path("responses").path("200").path("content").has("application/json"))
+                .as("200 keeps the TicketView body")
+                .isTrue();
+        assertThat(get.path("responses").path("404").path("content").has("application/problem+json"))
+                .isTrue();
+        assertThat(get.path("responses").path("400").path("content").has("application/problem+json"))
+                .isTrue();
+    }
+
+    /** Real Tomcat path handling: an unmatched path gets a generic 404 that does not echo it. */
+    @Test
+    void unknownRouteIs404WithoutEchoingThePath() throws Exception {
+        HttpResponse<String> response = get("/api/v1/tickets/abc/%3Cscript%3Eprobe", UUID.randomUUID());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.headers().firstValue("Content-Type")).hasValue("application/problem+json");
+        JsonNode problem = json.readTree(response.body());
+        assertThat(problem.get("detail").asString()).isEqualTo("No endpoint matches this request");
+        assertThat(problem.get("instance").asString()).startsWith("urn:uuid:");
+        assertThat(response.body())
+                .doesNotContain("probe")
+                .doesNotContain("script")
+                .doesNotContain("abc");
+    }
+
+    private HttpResponse<String> submit(UUID customer) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(uri("/api/v1/tickets"))
+                        .header("Content-Type", "application/json")
+                        .header("X-Customer-Id", customer.toString())
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"subject\": \"Printer offline\", \"body\": \"It stopped after the update.\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> get(String path, UUID customer) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(uri(path))
+                        .header("X-Customer-Id", customer.toString())
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 }

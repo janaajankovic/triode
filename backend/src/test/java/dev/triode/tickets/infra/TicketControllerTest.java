@@ -3,23 +3,28 @@ package dev.triode.tickets.infra;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
 import dev.triode.shared.api.CurrentCustomer;
+import dev.triode.tickets.api.TicketLookup;
 import dev.triode.tickets.api.TicketSubmission;
 import dev.triode.tickets.api.TicketView;
 import dev.triode.tickets.domain.InvalidStatusTransitionException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
+import dev.triode.tickets.domain.TicketNotFoundException;
 import dev.triode.tickets.domain.TicketStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -39,11 +44,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.web.util.UriUtils;
 
 /**
- * HTTP contract of {@code POST /api/v1/tickets}: web slice with the real shared error handling (advice, size filter,
- * header-based CurrentCustomer) and a mocked {@link TicketSubmission}. The mock delegates to {@link Ticket#submit}, so
- * validation results come from the domain, as in production.
+ * HTTP contract of {@code POST /api/v1/tickets} and {@code GET /api/v1/tickets/{id}}: web slice with the real shared
+ * error handling (advice, size filter, header-based CurrentCustomer) and mocked {@link TicketSubmission} and
+ * {@link TicketLookup}. The submission mock delegates to {@link Ticket#submit}, so validation results come from the
+ * domain, as in production.
  */
 @WebMvcTest(
         controllers = TicketController.class,
@@ -62,12 +69,14 @@ class TicketControllerTest {
     @MockitoBean
     private TicketSubmission submission;
 
+    @MockitoBean
+    private TicketLookup lookup;
+
     @BeforeEach
     void submitThroughTheDomain() {
-        when(submission.submit(any(), any(), any())).thenAnswer(call -> {
-            Ticket ticket = Ticket.submit(call.getArgument(0), call.getArgument(1), call.getArgument(2), CLOCK);
-            return new TicketView(ticket.getId().value(), ticket.getStatus().name(), ticket.getCreatedAt());
-        });
+        when(submission.submit(any(), any(), any()))
+                .thenAnswer(call -> TicketViews.of(
+                        Ticket.submit(call.getArgument(0), call.getArgument(1), call.getArgument(2), CLOCK)));
     }
 
     private ResultActions postTicket(String json) throws Exception {
@@ -95,6 +104,9 @@ class TicketControllerTest {
         MvcResult result = postTicket(VALID_BODY)
                 .andExpect(status().isCreated())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.subject").value("Cannot log in"))
+                .andExpect(jsonPath("$.body").value("The login page shows an error."))
                 .andExpect(jsonPath("$.status").value("NEW"))
                 .andExpect(jsonPath("$.createdAt").value("2026-11-20T10:00:00Z"))
                 .andReturn();
@@ -258,6 +270,112 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.detail").value("An unexpected error occurred"))
                 .andExpect(content().string(not(containsString("secret"))))
                 .andExpect(content().string(not(containsString("IllegalStateException"))));
+    }
+
+    // --- GET /api/v1/tickets/{id} ---
+
+    private ResultActions getTicket(Object id) throws Exception {
+        return mvc.perform(get("/api/v1/tickets/{id}", id).header("X-Customer-Id", CUSTOMER));
+    }
+
+    @Test
+    void getOwnTicketReturns200WithAllFieldsAndNoStore() throws Exception {
+        TicketView view = TicketViews.of(
+                Ticket.submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", CLOCK));
+        when(lookup.findForCustomer(view.id(), UUID.fromString(CUSTOMER))).thenReturn(view);
+
+        getTicket(view.id())
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.id").value(view.id().toString()))
+                .andExpect(jsonPath("$.subject").value("Cannot log in"))
+                .andExpect(jsonPath("$.body").value("The login page shows an error."))
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.createdAt").value("2026-11-20T10:00:00Z"));
+
+        verify(lookup).findForCustomer(view.id(), UUID.fromString(CUSTOMER));
+    }
+
+    @Test
+    void getUnknownTicketIs404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(lookup.findForCustomer(id, UUID.fromString(CUSTOMER)))
+                .thenThrow(new TicketNotFoundException(new TicketId(id)));
+
+        expectProblem(getTicket(id), 404).andExpect(jsonPath("$.detail").value("Ticket " + id + " not found"));
+    }
+
+    /**
+     * The HTTP layer turns every {@link TicketNotFoundException} into the same 404 body apart from the requested id,
+     * and never echoes the caller. That "absent" and "not yours" throw the same exception is covered in
+     * {@code TicketLookupServiceTest} and {@code TicketApiIntegrationTests}.
+     */
+    @Test
+    void notFoundBodyIsTheSameShapeForAnyId() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(lookup.findForCustomer(any(), any())).thenAnswer(call -> {
+            throw new TicketNotFoundException(new TicketId(call.getArgument(0)));
+        });
+
+        String firstBody =
+                expectProblem(getTicket(first), 404).andReturn().getResponse().getContentAsString();
+        String secondBody =
+                expectProblem(getTicket(second), 404).andReturn().getResponse().getContentAsString();
+
+        assertThat(firstBody.replace(first.toString(), "{id}"))
+                .isEqualTo(secondBody.replace(second.toString(), "{id}"));
+        assertThat(firstBody).doesNotContain(CUSTOMER);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"not-a-uuid", "12345", "x<script>y", "1-1-1-1-1x"})
+    void nonUuidTicketIdIs400WithoutEchoingIt(String id) throws Exception {
+        String encoded = UriUtils.encodePathSegment(id, StandardCharsets.UTF_8);
+
+        expectProblem(getTicket(id), 400)
+                .andExpect(jsonPath("$.detail").value("Invalid request parameter"))
+                .andExpect(jsonPath("$.errors.id").value("must be a UUID"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/tickets/%7Bid%7D"))
+                .andExpect(content().string(not(containsString(id))))
+                .andExpect(content().string(not(containsString(encoded))));
+
+        verifyNoInteractions(lookup);
+    }
+
+    /** An id with a "/" never matches the route: Spring's no-route 404, which must not echo the path either. */
+    @Test
+    void unknownRouteIs404WithoutEchoingThePath() throws Exception {
+        String path = "/api/v1/tickets/abc/x<script>probe";
+
+        expectProblem(mvc.perform(get(path).header("X-Customer-Id", CUSTOMER)), 404)
+                .andExpect(jsonPath("$.detail").value("No endpoint matches this request"))
+                .andExpect(jsonPath("$.instance").value(startsWith("urn:uuid:")))
+                .andExpect(content().string(not(containsString("probe"))))
+                .andExpect(content().string(not(containsString("abc"))));
+
+        verifyNoInteractions(lookup);
+    }
+
+    @Test
+    void getWithoutCustomerHeaderIs400() throws Exception {
+        expectProblem(mvc.perform(get("/api/v1/tickets/{id}", UUID.randomUUID())), 400)
+                .andExpect(jsonPath("$.errors['X-Customer-Id']").value("is required"));
+
+        verifyNoInteractions(lookup);
+    }
+
+    @Test
+    void getWithNonUuidCustomerHeaderIs400() throws Exception {
+        expectProblem(
+                        mvc.perform(
+                                get("/api/v1/tickets/{id}", UUID.randomUUID()).header("X-Customer-Id", "not-a-uuid")),
+                        400)
+                .andExpect(jsonPath("$.errors['X-Customer-Id']").value("must be a UUID"))
+                .andExpect(content().string(not(containsString("not-a-uuid"))));
+
+        verifyNoInteractions(lookup);
     }
 
     @Test
