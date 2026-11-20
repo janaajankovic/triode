@@ -37,6 +37,7 @@ _TODO: one row per release._
 | --- | --- |
 | [0001](docs/adr/0001-modular-monolith.md) | Modular monolith with Spring Modulith |
 | [0002](docs/adr/0002-trunk-based-development.md) | Trunk-based development |
+| [0010](docs/adr/0010-api-error-model.md) | API error model: domain exception kinds, one RFC 9457 handler |
 
 ## Run locally
 
@@ -48,6 +49,22 @@ cd backend
 ./mvnw spring-boot:run              # starts the app on http://localhost:8080
 ./mvnw verify                       # formatting check, unit + integration tests, coverage report
 ```
+
+## Try the API
+
+With the app running, submit a ticket. Until authentication arrives (Sprint 4), the caller is identified by the
+temporary `X-Customer-Id` header (any UUID; this one is made up):
+
+```bash
+curl -i -X POST http://localhost:8080/api/v1/tickets \
+  -H 'Content-Type: application/json' \
+  -H 'X-Customer-Id: 3f2b8c1e-0000-4000-8000-000000000001' \
+  -d '{"subject": "Cannot log in", "body": "The login page shows an error after I enter my password."}'
+```
+
+The answer is `201 Created` with a `Location: /api/v1/tickets/{id}` header and `{"id": "...", "status": "NEW", "createdAt": "..."}`.
+Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details ([ADR 0010](docs/adr/0010-api-error-model.md)).
+The OpenAPI description is at http://localhost:8080/v3/api-docs (Swagger UI: http://localhost:8080/swagger-ui.html).
 
 ## Engineering process
 

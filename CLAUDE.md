@@ -19,7 +19,14 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
 - `spring-modulith-starter-jpa` was removed in TRI-16. The story that adds the first module event (outbox, ADR 0003)
   re-adds it together with a migration for `event_publication`.
 - Every LLM call goes through `LlmGateway`. Prompts live in versioned files in `resources/prompts` (e.g. `classify.v1.st`).
-- Errors are RFC 9457 problem details from one global exception handler.
+- Errors are RFC 9457 problem details from one global exception handler (`shared.infra.web.GlobalExceptionHandler`, ADR 0010).
+  Business exceptions extend `shared.api.DomainException` and pick a kind (INVALID_INPUT/CONFLICT/NOT_FOUND → 400/409/404);
+  never add a per-class mapping to the handler. Their messages are sent to clients: no customer text in them.
+- Request validation lives only in the domain: no Bean Validation on request records; document limits with `@Schema`
+  using the domain constants.
+- Caller identity comes from `shared.api.CurrentCustomer`. The current implementation reads the unauthenticated
+  `X-Customer-Id` header and is TEMPORARY until authentication in Sprint 4 (replaced by the login token); never use it
+  for access control. Identity never comes from a request body.
 
 ## Working rules
 - Write or update tests with every change. Before finishing, run from `backend/`: `./mvnw spotless:apply` then `./mvnw verify`
