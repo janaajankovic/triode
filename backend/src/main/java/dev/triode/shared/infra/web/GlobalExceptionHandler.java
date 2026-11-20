@@ -23,6 +23,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.exc.StreamConstraintsException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
@@ -125,6 +126,21 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     ResponseEntity<ProblemDetail> handleUnexpected(Exception e) {
         log.error("Unhandled exception", e);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", Map.of());
+    }
+
+    /**
+     * No controller route or static resource matches the path. Spring's own detail names the path, and the default
+     * {@code instance} is the raw request path; both are client input. The detail is generic and {@code instance} is an
+     * opaque occurrence id, logged at debug level with the method (not the path) so a report can be matched to the log.
+     */
+    @Override
+    protected ResponseEntity<Object> handleNoResourceFoundException(
+            NoResourceFoundException e, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        URI occurrence = URI.create("urn:uuid:" + UUID.randomUUID());
+        log.debug("No route for {} request ({})", e.getHttpMethod(), occurrence);
+        ProblemDetail body = problem(HttpStatus.NOT_FOUND, "No endpoint matches this request", Map.of());
+        body.setInstance(occurrence);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
     /** A route template as a URI; the braces of its variables are percent-encoded ({@code {id}} → {@code %7Bid%7D}). */

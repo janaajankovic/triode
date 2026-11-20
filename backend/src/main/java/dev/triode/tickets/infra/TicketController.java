@@ -7,11 +7,14 @@ import dev.triode.tickets.api.TicketView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.net.URI;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -66,6 +69,21 @@ class TicketController {
             required = true,
             description = "Temporary caller identity until authentication (Sprint 4)",
             schema = @Schema(type = "string", format = "uuid"))
+    @ApiResponse(responseCode = "200", description = "The caller's ticket")
+    @ApiResponse(
+            responseCode = "400",
+            description = "The id is not a UUID, or X-Customer-Id is missing or not a UUID",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(
+            responseCode = "404",
+            description = "No ticket with this id belongs to the caller (unknown and someone else's look the same)",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class)))
     @GetMapping(path = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<TicketView> get(@PathVariable UUID id) {
         TicketView ticket = lookup.findForCustomer(id, currentCustomer.customerId());

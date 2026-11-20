@@ -3,6 +3,7 @@ package dev.triode.tickets.infra;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -305,28 +306,27 @@ class TicketControllerTest {
         expectProblem(getTicket(id), 404).andExpect(jsonPath("$.detail").value("Ticket " + id + " not found"));
     }
 
-    /** The service throws the same exception for "absent" and "not yours"; the HTTP responses must match too. */
+    /**
+     * The HTTP layer turns every {@link TicketNotFoundException} into the same 404 body apart from the requested id,
+     * and never echoes the caller. That "absent" and "not yours" throw the same exception is covered in
+     * {@code TicketLookupServiceTest} and {@code TicketApiIntegrationTests}.
+     */
     @Test
-    void anotherCustomersTicketIs404IdenticalToUnknown() throws Exception {
-        UUID owner = UUID.randomUUID();
-        UUID othersTicket = UUID.randomUUID();
-        UUID unknownTicket = UUID.randomUUID();
+    void notFoundBodyIsTheSameShapeForAnyId() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
         when(lookup.findForCustomer(any(), any())).thenAnswer(call -> {
             throw new TicketNotFoundException(new TicketId(call.getArgument(0)));
         });
 
-        String others = expectProblem(getTicket(othersTicket), 404)
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        String unknown = expectProblem(getTicket(unknownTicket), 404)
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+        String firstBody =
+                expectProblem(getTicket(first), 404).andReturn().getResponse().getContentAsString();
+        String secondBody =
+                expectProblem(getTicket(second), 404).andReturn().getResponse().getContentAsString();
 
-        assertThat(others.replace(othersTicket.toString(), "{id}"))
-                .isEqualTo(unknown.replace(unknownTicket.toString(), "{id}"));
-        assertThat(others).doesNotContain(owner.toString()).doesNotContain(CUSTOMER);
+        assertThat(firstBody.replace(first.toString(), "{id}"))
+                .isEqualTo(secondBody.replace(second.toString(), "{id}"));
+        assertThat(firstBody).doesNotContain(CUSTOMER);
     }
 
     @ParameterizedTest
@@ -340,6 +340,20 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.instance").value("/api/v1/tickets/%7Bid%7D"))
                 .andExpect(content().string(not(containsString(id))))
                 .andExpect(content().string(not(containsString(encoded))));
+
+        verifyNoInteractions(lookup);
+    }
+
+    /** An id with a "/" never matches the route: Spring's no-route 404, which must not echo the path either. */
+    @Test
+    void unknownRouteIs404WithoutEchoingThePath() throws Exception {
+        String path = "/api/v1/tickets/abc/x<script>probe";
+
+        expectProblem(mvc.perform(get(path).header("X-Customer-Id", CUSTOMER)), 404)
+                .andExpect(jsonPath("$.detail").value("No endpoint matches this request"))
+                .andExpect(jsonPath("$.instance").value(startsWith("urn:uuid:")))
+                .andExpect(content().string(not(containsString("probe"))))
+                .andExpect(content().string(not(containsString("abc"))));
 
         verifyNoInteractions(lookup);
     }

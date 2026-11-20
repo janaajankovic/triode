@@ -70,26 +70,6 @@ class TicketApiIntegrationTests {
                 .containsEntry("subject", "Cannot log in");
     }
 
-    private HttpResponse<String> submit(UUID customer) throws Exception {
-        return http.send(
-                HttpRequest.newBuilder(uri("/api/v1/tickets"))
-                        .header("Content-Type", "application/json")
-                        .header("X-Customer-Id", customer.toString())
-                        .POST(HttpRequest.BodyPublishers.ofString(
-                                "{\"subject\": \"Printer offline\", \"body\": \"It stopped after the update.\"}"))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-    }
-
-    private HttpResponse<String> get(String path, UUID customer) throws Exception {
-        return http.send(
-                HttpRequest.newBuilder(uri(path))
-                        .header("X-Customer-Id", customer.toString())
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-    }
-
     @Test
     void followingTheLocationHeaderReturnsTheSameTicketToItsCustomer() throws Exception {
         UUID customer = UUID.randomUUID();
@@ -169,5 +149,53 @@ class TicketApiIntegrationTests {
         assertThat(get.path("parameters").toString())
                 .contains("\"name\":\"X-Customer-Id\"")
                 .contains("\"name\":\"id\"");
+        for (String status : new String[] {"200", "400", "404"}) {
+            assertThat(get.path("responses").path(status).isMissingNode())
+                    .as("GET response " + status)
+                    .isFalse();
+        }
+        assertThat(get.path("responses").path("200").path("content").has("application/json"))
+                .as("200 keeps the TicketView body")
+                .isTrue();
+        assertThat(get.path("responses").path("404").path("content").has("application/problem+json"))
+                .isTrue();
+        assertThat(get.path("responses").path("400").path("content").has("application/problem+json"))
+                .isTrue();
+    }
+
+    /** Real Tomcat path handling: an unmatched path gets a generic 404 that does not echo it. */
+    @Test
+    void unknownRouteIs404WithoutEchoingThePath() throws Exception {
+        HttpResponse<String> response = get("/api/v1/tickets/abc/%3Cscript%3Eprobe", UUID.randomUUID());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.headers().firstValue("Content-Type")).hasValue("application/problem+json");
+        JsonNode problem = json.readTree(response.body());
+        assertThat(problem.get("detail").asString()).isEqualTo("No endpoint matches this request");
+        assertThat(problem.get("instance").asString()).startsWith("urn:uuid:");
+        assertThat(response.body())
+                .doesNotContain("probe")
+                .doesNotContain("script")
+                .doesNotContain("abc");
+    }
+
+    private HttpResponse<String> submit(UUID customer) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(uri("/api/v1/tickets"))
+                        .header("Content-Type", "application/json")
+                        .header("X-Customer-Id", customer.toString())
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"subject\": \"Printer offline\", \"body\": \"It stopped after the update.\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> get(String path, UUID customer) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(uri(path))
+                        .header("X-Customer-Id", customer.toString())
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 }

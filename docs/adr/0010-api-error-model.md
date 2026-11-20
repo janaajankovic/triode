@@ -18,6 +18,8 @@ The engineering standards require RFC 9457 problem details from one global excep
 | Missing or non-UUID `X-Customer-Id` (temporary, until Sprint 4) | 400 | `{"X-Customer-Id": reason}` |
 | Malformed JSON, wrong types | 400 | — (parser message not exposed) |
 | Unknown JSON property | 400 | `{"<name>": "unknown property"}` if the name matches `^[A-Za-z][A-Za-z0-9_]{0,63}$`, otherwise none (client input is not echoed) |
+| Path or query parameter that cannot be converted (e.g. a non-UUID `/api/v1/tickets/{id}`) | 400 | `{"<param>": "must be a UUID" \| "has an invalid value"}`; the value is not echoed, and `instance` is the matched route template (`/api/v1/tickets/%7Bid%7D`), not the raw path |
+| No route or static resource matches the path | 404 | — (generic detail, path not echoed; `instance` is an opaque `urn:uuid:` occurrence id, also in the debug log) |
 | Body over 128 KB (`triode.api.max-request-body-bytes`): declared `Content-Length` rejected by a filter before reading (plain `sendError(413)` if no resolver handles it); chunked bodies stopped by Jackson's `max-document-length` | 413 | — |
 | Anything else, incl. invalid stored data found by `reconstitute` | 500 | — (logged server-side, generic detail) |
 
