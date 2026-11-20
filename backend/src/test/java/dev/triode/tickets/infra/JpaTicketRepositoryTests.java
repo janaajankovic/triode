@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.triode.TestcontainersConfiguration;
+import dev.triode.shared.api.DomainException;
 import dev.triode.tickets.domain.InvalidTicketException;
 import dev.triode.tickets.domain.StaleTicketException;
 import dev.triode.tickets.domain.Ticket;
@@ -172,7 +173,13 @@ class JpaTicketRepositoryTests {
     void findByIdFailsLoudlyOnInvalidStoredData() {
         UUID id = insertRow(" padded subject ", "NEW");
 
+        // A server-side fault (500), not the caller's invalid input (400). The adapter throws IllegalStateException;
+        // @Repository exception translation wraps it in a DataAccessException on the way out.
         assertThatThrownBy(() -> tickets.findById(new TicketId(id)))
+                .isNotInstanceOf(DomainException.class)
+                .hasMessage("stored ticket " + id + " is invalid")
+                .hasCauseInstanceOf(IllegalStateException.class)
+                .rootCause()
                 .isInstanceOf(InvalidTicketException.class)
                 .hasMessage("Invalid ticket subject: must not have leading or trailing whitespace");
     }

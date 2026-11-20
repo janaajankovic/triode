@@ -23,7 +23,9 @@ public interface TicketRepository {
     /**
      * Loads a ticket by id.
      *
-     * @throws InvalidTicketException if the stored data breaks the ticket's field rules
+     * @throws RuntimeException (not a {@link TicketDomainException}) if the stored data breaks the ticket's field
+     *     rules: a server-side fault, never reported to the caller as invalid input. The
+     *     {@link InvalidTicketException} is the root cause.
      */
     Optional<Ticket> findById(TicketId id);
 }

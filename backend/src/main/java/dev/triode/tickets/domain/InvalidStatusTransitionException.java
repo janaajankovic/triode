@@ -2,7 +2,7 @@ package dev.triode.tickets.domain;
 
 import java.io.Serial;
 
-/** A ticket was asked to move to a status that its current status does not allow. */
+/** A ticket was asked to move to a status that its current status does not allow. Kind {@code CONFLICT}. */
 public class InvalidStatusTransitionException extends TicketDomainException {
 
     @Serial
@@ -13,7 +13,7 @@ public class InvalidStatusTransitionException extends TicketDomainException {
     private final TicketStatus to;
 
     public InvalidStatusTransitionException(TicketId ticketId, TicketStatus from, TicketStatus to) {
-        super("Ticket " + ticketId + ": cannot change status from " + from + " to " + to);
+        super(Kind.CONFLICT, "Ticket " + ticketId + ": cannot change status from " + from + " to " + to);
         this.ticketId = ticketId;
         this.from = from;
         this.to = to;
