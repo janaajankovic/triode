@@ -21,12 +21,15 @@ import dev.triode.tickets.domain.InvalidStatusTransitionException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
 import dev.triode.tickets.domain.TicketStatus;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
@@ -187,14 +190,50 @@ class TicketControllerTest {
         verifyNoInteractions(submission);
     }
 
-    @Test
-    void bodyOver64KbIs413BeforeParsing() throws Exception {
-        String huge = json("Subject", "b".repeat(70_000));
+    /** Names that are not plain identifiers (or too long) are client input and are not echoed. */
+    @ParameterizedTest
+    @ValueSource(strings = {"<img src=x onerror=alert(1)>", "1abc", "sub ject", "status-x", "ä"})
+    void oddUnknownPropertyNameIsNotEchoed(String name) throws Exception {
+        String json = "{\"subject\": \"S\", \"body\": \"B\", \"" + name + "\": 1}";
 
-        expectProblem(postTicket(huge), 413)
-                .andExpect(jsonPath("$.detail").value("Request body must not exceed 65536 bytes"));
+        expectProblem(postTicket(json), 400)
+                .andExpect(jsonPath("$.detail").value("Request body contains unknown properties"))
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(content().string(not(containsString(name))));
 
         verifyNoInteractions(submission);
+    }
+
+    @Test
+    void longUnknownPropertyNameIsNotEchoed() throws Exception {
+        String longest = "a" + "b".repeat(63); // 64 characters: still echoed
+        String tooLong = "a" + "b".repeat(5_000);
+
+        expectProblem(postTicket("{\"" + longest + "\": 1}"), 400)
+                .andExpect(jsonPath("$.errors." + longest).value("unknown property"));
+        expectProblem(postTicket("{\"" + tooLong + "\": 1}"), 400)
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(content().string(not(containsString(tooLong))));
+    }
+
+    @Test
+    void bodyOver128KbIs413BeforeParsing() throws Exception {
+        String huge = json("Subject", "b".repeat(140_000));
+
+        expectProblem(postTicket(huge), 413)
+                .andExpect(jsonPath("$.detail").value("Request body must not exceed 131072 bytes"));
+
+        verifyNoInteractions(submission);
+    }
+
+    /** Worst case for the byte limit: every code point a non-BMP character sent as an escaped surrogate pair. */
+    @Test
+    void largestValidTicketWithEscapedEmojiFitsTheLimit() throws Exception {
+        String emoji = "\\uD83D\\uDE00"; // 12 bytes on the wire, one code point
+        String json = json(emoji.repeat(Ticket.MAX_SUBJECT_LENGTH), emoji.repeat(Ticket.MAX_BODY_LENGTH));
+        assertThat(json.getBytes(StandardCharsets.UTF_8).length).isGreaterThan(120_000);
+
+        postTicket(json).andExpect(status().isCreated());
     }
 
     @Test

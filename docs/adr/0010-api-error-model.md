@@ -17,10 +17,11 @@ The engineering standards require RFC 9457 problem details from one global excep
 | `DomainException` `INVALID_INPUT` / `CONFLICT` / `NOT_FOUND` | 400 / 409 / 404 | `details()` |
 | Missing or non-UUID `X-Customer-Id` (temporary, until Sprint 4) | 400 | `{"X-Customer-Id": reason}` |
 | Malformed JSON, wrong types | 400 | — (parser message not exposed) |
-| Unknown JSON property | 400 | `{"<name>": "unknown property"}` |
-| Body over 64 KB (`triode.api.max-request-body-bytes`): declared `Content-Length` rejected by a filter before reading; chunked bodies stopped by Jackson's `max-document-length` | 413 | — |
+| Unknown JSON property | 400 | `{"<name>": "unknown property"}` if the name matches `^[A-Za-z][A-Za-z0-9_]{0,63}$`, otherwise none (client input is not echoed) |
+| Body over 128 KB (`triode.api.max-request-body-bytes`): declared `Content-Length` rejected by a filter before reading (plain `sendError(413)` if no resolver handles it); chunked bodies stopped by Jackson's `max-document-length` | 413 | — |
 | Anything else, incl. invalid stored data found by `reconstitute` | 500 | — (logged server-side, generic detail) |
 
+- The 128 KB body limit is derived from the domain limits so that every valid ticket fits: in the worst case each code point is a non-BMP character sent as an escaped surrogate pair (12 bytes), and 12 × (255 + 10,000) = 123,060 bytes plus JSON syntax. It must be raised if `Ticket.MAX_SUBJECT_LENGTH` or `MAX_BODY_LENGTH` grows.
 - Invalid data loaded from the database is the server's fault: the persistence adapter wraps the domain's `INVALID_INPUT` exception in a server-side exception, so it is a 500, never a 400.
 
 ## Consequences

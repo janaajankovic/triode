@@ -72,9 +72,9 @@ class TicketSubmissionIntegrationTests {
 
     /** No Content-Length, so the size filter cannot see the size; Jackson's document-length limit stops it. */
     @Test
-    void chunkedBodyOver64KbIs413() throws Exception {
+    void chunkedBodyOver128KbIs413() throws Exception {
         byte[] huge =
-                ("{\"subject\": \"S\", \"body\": \"" + "b".repeat(70_000) + "\"}").getBytes(StandardCharsets.UTF_8);
+                ("{\"subject\": \"S\", \"body\": \"" + "b".repeat(140_000) + "\"}").getBytes(StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/tickets"))
                 .header("Content-Type", "application/json")
                 .header("X-Customer-Id", UUID.randomUUID().toString())
@@ -86,7 +86,7 @@ class TicketSubmissionIntegrationTests {
         assertThat(response.statusCode()).isEqualTo(413);
         assertThat(response.headers().firstValue("Content-Type")).hasValue("application/problem+json");
         assertThat(json.readTree(response.body()).get("detail").asString())
-                .isEqualTo("Request body must not exceed 65536 bytes");
+                .isEqualTo("Request body must not exceed 131072 bytes");
     }
 
     @Test

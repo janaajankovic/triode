@@ -2,6 +2,7 @@ package dev.triode.shared.infra.web;
 
 import dev.triode.shared.api.DomainException;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +31,9 @@ import tools.jackson.databind.exc.UnrecognizedPropertyException;
 class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     static final String ERRORS = "errors";
+
+    private static final String UNKNOWN_PROPERTY = "unknown property";
+    private static final Pattern SAFE_PROPERTY_NAME = Pattern.compile("^[A-Za-z][A-Za-z0-9_]{0,63}$");
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
@@ -75,11 +79,14 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
         UnrecognizedPropertyException unknown = findCause(e, UnrecognizedPropertyException.class);
         if (unknown != null) {
+            // The name is client input: echo it only if it looks like a plain identifier, never arbitrary text.
+            String name = unknown.getPropertyName();
+            Map<String, String> errors =
+                    name != null && SAFE_PROPERTY_NAME.matcher(name).matches()
+                            ? Map.of(name, UNKNOWN_PROPERTY)
+                            : Map.of();
             return ResponseEntity.badRequest()
-                    .body(problem(
-                            HttpStatus.BAD_REQUEST,
-                            "Request body contains unknown properties",
-                            Map.of(unknown.getPropertyName(), "unknown property")));
+                    .body(problem(HttpStatus.BAD_REQUEST, "Request body contains unknown properties", errors));
         }
         // The parser's own message names internal classes and echoes input, so it is not passed on.
         return ResponseEntity.badRequest()

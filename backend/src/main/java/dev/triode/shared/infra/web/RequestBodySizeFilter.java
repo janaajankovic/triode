@@ -7,9 +7,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
+import org.springframework.web.servlet.ModelAndView;
 
 /**
  * Rejects requests whose declared {@code Content-Length} exceeds {@code triode.api.max-request-body-bytes} with 413,
@@ -39,8 +41,12 @@ class RequestBodySizeFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         long contentLength = request.getContentLengthLong();
         if (contentLength > maxBytes) {
-            exceptionResolver.resolveException(
+            ModelAndView handled = exceptionResolver.resolveException(
                     request, response, null, new RequestBodyTooLargeException(contentLength, maxBytes));
+            if (handled == null) {
+                // No resolver took it: never let the request through or answer with an empty 200.
+                response.sendError(HttpStatus.CONTENT_TOO_LARGE.value());
+            }
             return;
         }
         chain.doFilter(request, response);
