@@ -151,6 +151,15 @@ class TicketApiIntegrationTests {
         }
         assertThat(post.path("responses").path("200").path("headers").has("Idempotent-Replayed"))
                 .isTrue();
+        assertThat(post.path("responses").path("200").path("headers").has("Content-Location"))
+                .isTrue();
+        assertThat(post.path("responses").path("200").path("headers").has("Location"))
+                .as("Location has no meaning on a 200")
+                .isFalse();
+        assertThat(post.path("responses").path("201").path("headers").has("Location"))
+                .isTrue();
+        assertThat(idempotencyKey.path("schema").path("pattern").asString())
+                .isEqualTo("^[\\x21-\\x7E]([\\x20-\\x7E]*[\\x21-\\x7E])?$");
         assertThat(post.path("responses").path("200").path("content").has("application/json"))
                 .as("replay returns the TicketView")
                 .isTrue();

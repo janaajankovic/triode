@@ -17,9 +17,10 @@ class IdempotencyKeyTest {
             strings = {
                 "k",
                 "0d8f2c5e-3b1a-4f7e-9c2d-5a6b7c8d9e0f",
-                " ",
-                "~",
-                "with space",
+                "!", // first printable character after space
+                "~", // last printable character
+                "with space", // inner spaces are fine
+                "a,b", // a comma is part of the key, not a list separator
                 "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}"
             })
     void acceptsPrintableAscii(String value) {
@@ -55,6 +56,13 @@ class IdempotencyKeyTest {
         assertRejected("k".repeat(IdempotencyKey.MAX_LENGTH + 1));
     }
 
+    /** Servers trim these from header values, so such a key could never arrive as sent. */
+    @ParameterizedTest
+    @ValueSource(strings = {" ", "  ", " key", "key ", " key "})
+    void rejectsLeadingOrTrailingSpaces(String value) {
+        assertRejected(value, "must not have leading or trailing spaces");
+    }
+
     @Test
     void toStringHidesTheValue() {
         assertThat(new IdempotencyKey("secret-key-123").toString())
@@ -71,15 +79,18 @@ class IdempotencyKeyTest {
     }
 
     private static void assertRejected(String value) {
+        assertRejected(value, "must be 1 to 255 printable ASCII characters");
+    }
+
+    private static void assertRejected(String value, String reason) {
         InvalidTicketException exception =
                 catchThrowableOfType(InvalidTicketException.class, () -> new IdempotencyKey(value));
 
         assertThat(exception).isNotNull();
         assertThat(exception.kind()).isEqualTo(DomainException.Kind.INVALID_INPUT);
-        assertThat(exception.details())
-                .containsExactly(Map.entry("Idempotency-Key", "must be 1 to 255 printable ASCII characters"));
-        assertThat(exception).hasMessage("Invalid ticket Idempotency-Key: must be 1 to 255 printable ASCII characters");
-        if (value != null && !value.isEmpty()) {
+        assertThat(exception.details()).containsExactly(Map.entry("Idempotency-Key", reason));
+        assertThat(exception).hasMessage("Invalid ticket Idempotency-Key: " + reason);
+        if (value != null && !value.isBlank()) {
             assertThat(exception.getMessage()).doesNotContain(value);
         }
     }

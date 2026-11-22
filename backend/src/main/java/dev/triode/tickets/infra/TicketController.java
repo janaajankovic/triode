@@ -6,6 +6,7 @@ import dev.triode.tickets.api.TicketLookup;
 import dev.triode.tickets.api.TicketSubmission;
 import dev.triode.tickets.api.TicketView;
 import dev.triode.tickets.domain.IdempotencyKey;
+import dev.triode.tickets.domain.InvalidTicketException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -62,6 +64,21 @@ class TicketController {
             required = true,
             description = "Temporary caller identity until authentication (Sprint 4)",
             schema = @Schema(type = "string", format = "uuid"))
+    @Parameter(
+            name = IdempotencyKey.NAME,
+            in = ParameterIn.HEADER,
+            required = false,
+            description = "Optional client-chosen key, unique per customer (e.g. a UUID), sent at most once. Reusing it"
+                    + " with the same subject and body (exactly as sent) replays the original ticket; with a different"
+                    + " subject or body it is rejected with 422. Keys do not expire.",
+            schema =
+                    @Schema(
+                            type = "string",
+                            minLength = 1,
+                            maxLength = IdempotencyKey.MAX_LENGTH,
+                            // Printable ASCII without leading or trailing spaces (the server trims those).
+                            pattern = "^[\\x21-\\x7E]([\\x20-\\x7E]*[\\x21-\\x7E])?$",
+                            example = "0d8f2c5e-3b1a-4f7e-9c2d-5a6b7c8d9e0f"))
     @ApiResponse(
             responseCode = "201",
             description = "Ticket created",
@@ -75,7 +92,9 @@ class TicketController {
                         name = IDEMPOTENT_REPLAYED,
                         description = "Always true on a replay",
                         schema = @Schema(type = "string", allowableValues = "true")),
-                @Header(name = HttpHeaders.LOCATION, description = "Path of the original ticket")
+                @Header(
+                        name = HttpHeaders.CONTENT_LOCATION,
+                        description = "Path of the original ticket, which the body represents")
             })
     @ApiResponse(
             responseCode = "400",
@@ -95,27 +114,19 @@ class TicketController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<TicketView> submit(
             @RequestBody SubmitTicketRequest request,
-            @Parameter(
-                            description = "Optional client-chosen key, unique per customer (e.g. a UUID). Reusing it"
-                                    + " with the same subject and body (exactly as sent) replays the original ticket;"
-                                    + " with a different subject or body it is rejected with 422. Keys do not expire.",
-                            schema =
-                                    @Schema(
-                                            type = "string",
-                                            minLength = 1,
-                                            maxLength = IdempotencyKey.MAX_LENGTH,
-                                            pattern = "^[\\x20-\\x7E]+$",
-                                            example = "0d8f2c5e-3b1a-4f7e-9c2d-5a6b7c8d9e0f"))
-                    @RequestHeader(name = IdempotencyKey.NAME, required = false)
-                    String idempotencyKey) {
+            // All headers, not a String parameter: Spring would join repeated Idempotency-Key headers with commas
+            // into one valid-looking key. Documented by the method-level @Parameter above.
+            @Parameter(hidden = true) @RequestHeader HttpHeaders headers) {
+        String idempotencyKey = singleIdempotencyKey(headers);
         SubmittedTicket result =
                 submission.submit(currentCustomer.customerId(), request.subject(), request.body(), idempotencyKey);
         TicketView ticket = result.ticket();
         // Relative URI: correct behind a proxy or load balancer without trusting forwarded headers.
         URI location = URI.create(BASE_PATH + "/" + ticket.id());
         if (result.replayed()) {
+            // RFC 9110: Location has no meaning on a 200; Content-Location names the resource the body represents.
             return ResponseEntity.ok()
-                    .location(location)
+                    .header(HttpHeaders.CONTENT_LOCATION, location.toString())
                     .header(IDEMPOTENT_REPLAYED, "true")
                     .cacheControl(CacheControl.noStore())
                     .body(ticket);
@@ -123,6 +134,20 @@ class TicketController {
         return ResponseEntity.created(location)
                 .cacheControl(CacheControl.noStore())
                 .body(ticket);
+    }
+
+    /**
+     * The Idempotency-Key value, or null if the header is absent. Each header line is one value (no comma splitting),
+     * so a key may contain commas.
+     *
+     * @throws InvalidTicketException if the header is sent more than once (400)
+     */
+    private static String singleIdempotencyKey(HttpHeaders headers) {
+        List<String> values = headers.getOrEmpty(IdempotencyKey.NAME);
+        if (values.size() > 1) {
+            throw new InvalidTicketException(IdempotencyKey.NAME, "must be sent at most once");
+        }
+        return values.isEmpty() ? null : values.getFirst();
     }
 
     @Operation(

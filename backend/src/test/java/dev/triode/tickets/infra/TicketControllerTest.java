@@ -288,7 +288,7 @@ class TicketControllerTest {
     }
 
     @Test
-    void replayIs200WithTheOriginalTicketLocationAndReplayHeader() throws Exception {
+    void replayIs200WithTheOriginalTicketContentLocationAndReplayHeader() throws Exception {
         TicketView original = TicketViews.of(
                 Ticket.submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", CLOCK));
         doReturn(SubmittedTicket.replayed(original)).when(submission).submit(any(), any(), any(), any());
@@ -297,7 +297,8 @@ class TicketControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(header().string("Idempotent-Replayed", "true"))
-                .andExpect(header().string("Location", "/api/v1/tickets/" + original.id()))
+                .andExpect(header().string("Content-Location", "/api/v1/tickets/" + original.id()))
+                .andExpect(header().doesNotExist("Location"))
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.id").value(original.id().toString()))
                 .andExpect(jsonPath("$.subject").value("Cannot log in"))
@@ -335,6 +336,38 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.errors['Idempotency-Key']").value("must be 1 to 255 printable ASCII characters"))
                 .andExpect(content().string(not(containsString(key))));
         postTicketWithKey(VALID_BODY, "k".repeat(IdempotencyKey.MAX_LENGTH)).andExpect(status().isCreated());
+    }
+
+    /** MockMvc does not trim header values, so the domain rule is visible here; real servers trim before we see them. */
+    @ParameterizedTest
+    @ValueSource(strings = {" key", "key ", " "})
+    void keyWithLeadingOrTrailingSpaceIs400(String key) throws Exception {
+        expectProblem(postTicketWithKey(VALID_BODY, key), 400)
+                .andExpect(jsonPath("$.errors['Idempotency-Key']").value("must not have leading or trailing spaces"));
+    }
+
+    /** Two header lines would otherwise be joined into the single valid-looking key "first,second". */
+    @Test
+    void repeatedKeyHeaderIs400WithoutEchoingTheValues() throws Exception {
+        expectProblem(
+                        mvc.perform(post("/api/v1/tickets")
+                                .header("X-Customer-Id", CUSTOMER)
+                                .header("Idempotency-Key", "first-key", "second-key")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(VALID_BODY)),
+                        400)
+                .andExpect(jsonPath("$.errors['Idempotency-Key']").value("must be sent at most once"))
+                .andExpect(content().string(not(containsString("first-key"))))
+                .andExpect(content().string(not(containsString("second-key"))));
+
+        verifyNoInteractions(submission);
+    }
+
+    @Test
+    void commaInASingleKeyHeaderIsPartOfTheKey() throws Exception {
+        postTicketWithKey(VALID_BODY, "a,b").andExpect(status().isCreated());
+
+        verify(submission).submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", "a,b");
     }
 
     @Test

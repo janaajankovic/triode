@@ -62,8 +62,10 @@ class IdempotentSubmissionIntegrationTests {
         assertThat(first.headers().firstValue("Idempotent-Replayed")).isEmpty();
         assertThat(retry.statusCode()).isEqualTo(200);
         assertThat(retry.headers().firstValue("Idempotent-Replayed")).hasValue("true");
-        assertThat(retry.headers().firstValue("Location"))
+        assertThat(retry.headers().firstValue("Content-Location"))
+                .isPresent()
                 .isEqualTo(first.headers().firstValue("Location"));
+        assertThat(retry.headers().firstValue("Location")).isEmpty();
         assertThat(json.readTree(retry.body())).isEqualTo(json.readTree(first.body()));
         assertThat(rows(customer)).isOne();
     }
@@ -116,6 +118,13 @@ class IdempotentSubmissionIntegrationTests {
     /**
      * Parallel retries: the threads are released together, so their inserts race. The unique constraint lets exactly
      * one commit; the others wait for it, fail, reload the winner in a new transaction and replay it.
+     *
+     * <p>This test proves the <em>outcome</em> (one row, one 201, the same id everywhere), not that a race happened in
+     * every run: if the scheduler happened to serialise the requests, each later one would find the winner in its
+     * first lookup and never reach the constraint. The constraint path itself is proven deterministically elsewhere:
+     * {@code JpaTicketRepositoryTests} (a second insert with the same customer and key is translated, by constraint
+     * name, into {@code DuplicateIdempotencyKeyException}) and {@code TicketSubmissionServiceTest} (the failed insert's
+     * transaction is rolled back, then the winner is reloaded in a new transaction).
      */
     @Test
     void concurrentRetriesCreateExactlyOneTicket() throws Exception {
