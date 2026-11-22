@@ -134,6 +134,30 @@ class TicketApiIntegrationTests {
         assertThat(post.path("parameters").toString())
                 .contains("\"name\":\"X-Customer-Id\"")
                 .contains("\"in\":\"header\"");
+        JsonNode idempotencyKey = null;
+        for (JsonNode parameter : post.path("parameters")) {
+            if ("Idempotency-Key".equals(parameter.path("name").asString())) {
+                idempotencyKey = parameter;
+            }
+        }
+        assertThat(idempotencyKey).as("Idempotency-Key parameter").isNotNull();
+        assertThat(idempotencyKey.path("in").asString()).isEqualTo("header");
+        assertThat(idempotencyKey.path("required").asBoolean(false)).isFalse();
+        assertThat(idempotencyKey.path("schema").path("maxLength").asInt()).isEqualTo(255);
+        for (String status : new String[] {"200", "201", "400", "422"}) {
+            assertThat(post.path("responses").path(status).isMissingNode())
+                    .as("POST response " + status)
+                    .isFalse();
+        }
+        assertThat(post.path("responses").path("200").path("headers").has("Idempotent-Replayed"))
+                .isTrue();
+        assertThat(post.path("responses").path("200").path("content").has("application/json"))
+                .as("replay returns the TicketView")
+                .isTrue();
+        assertThat(post.path("responses").path("201").path("content").has("application/json"))
+                .isTrue();
+        assertThat(post.path("responses").path("422").path("content").has("application/problem+json"))
+                .isTrue();
 
         JsonNode request = spec.path("components").path("schemas").path("SubmitTicketRequest");
         assertThat(request.path("properties").path("subject").path("maxLength").asInt())

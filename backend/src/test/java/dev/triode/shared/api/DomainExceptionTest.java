@@ -65,6 +65,18 @@ class DomainExceptionTest {
     }
 
     @Test
+    void unprocessableIsAKind() {
+        assertThat(new TestException(DomainException.Kind.UNPROCESSABLE).kind())
+                .isEqualTo(DomainException.Kind.UNPROCESSABLE);
+        assertThat(DomainException.Kind.values())
+                .containsExactly(
+                        DomainException.Kind.INVALID_INPUT,
+                        DomainException.Kind.CONFLICT,
+                        DomainException.Kind.NOT_FOUND,
+                        DomainException.Kind.UNPROCESSABLE);
+    }
+
+    @Test
     void rejectsNullKindAndNullDetailValues() {
         assertThatNullPointerException().isThrownBy(() -> new TestException(null));
         Map<String, String> withNull = new HashMap<>();

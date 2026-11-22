@@ -27,7 +27,12 @@ public abstract class DomainException extends RuntimeException {
         /** The request does not fit the current state, for example a forbidden status change or a stale version. */
         CONFLICT,
         /** The requested object does not exist. */
-        NOT_FOUND
+        NOT_FOUND,
+        /**
+         * The request is well-formed and understood, but cannot be processed as sent, for example an idempotency key
+         * reused for a different request.
+         */
+        UNPROCESSABLE
     }
 
     private final Kind kind;

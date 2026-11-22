@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.triode.TestcontainersConfiguration;
 import dev.triode.shared.api.DomainException;
+import dev.triode.tickets.domain.DuplicateIdempotencyKeyException;
+import dev.triode.tickets.domain.IdempotencyKey;
 import dev.triode.tickets.domain.InvalidTicketException;
 import dev.triode.tickets.domain.StaleTicketException;
 import dev.triode.tickets.domain.Ticket;
@@ -182,6 +184,109 @@ class JpaTicketRepositoryTests {
                 .rootCause()
                 .isInstanceOf(InvalidTicketException.class)
                 .hasMessage("Invalid ticket subject: must not have leading or trailing whitespace");
+    }
+
+    // --- Idempotency key (V3) ---
+
+    private static Ticket keyedTicket(UUID customer, String key) {
+        return Ticket.submit(
+                customer, " Cannot log in ", "The login page shows an error.", new IdempotencyKey(key), CLOCK);
+    }
+
+    @Test
+    void keyAndFingerprintRoundTripAndAreFoundByCustomerAndKey() {
+        UUID customer = UUID.randomUUID();
+        Ticket submitted = keyedTicket(customer, "key-" + UUID.randomUUID());
+        IdempotencyKey key = submitted.getIdempotencyKey().orElseThrow();
+
+        tickets.save(submitted);
+        Ticket found = tickets.findByIdempotencyKey(customer, key).orElseThrow();
+
+        assertThat(found.getId()).isEqualTo(submitted.getId());
+        assertThat(found.getIdempotencyKey()).contains(key);
+        assertThat(found.getRequestFingerprint()).isEqualTo(submitted.getRequestFingerprint());
+        assertThat(found.isSameRequestAs(keyedTicket(customer, key.value()))).isTrue();
+        assertThat(jdbc.queryForObject(
+                        "select request_fingerprint from tickets where id = ?",
+                        String.class,
+                        submitted.getId().value()))
+                .isEqualTo(submitted.getRequestFingerprint().orElseThrow().value());
+    }
+
+    @Test
+    void findByIdempotencyKeyIsScopedToTheCustomer() {
+        String key = "key-" + UUID.randomUUID();
+        tickets.save(keyedTicket(UUID.randomUUID(), key));
+
+        assertThat(tickets.findByIdempotencyKey(UUID.randomUUID(), new IdempotencyKey(key)))
+                .isEmpty();
+    }
+
+    @Test
+    void sameCustomerAndKeyTwiceIsADuplicateIdempotencyKey() {
+        UUID customer = UUID.randomUUID();
+        String key = "key-" + UUID.randomUUID();
+        Ticket first = tickets.save(keyedTicket(customer, key));
+
+        // The root cause is the driver's exception: it names the constraint, but (logServerErrorDetail=false) not the
+        // conflicting row's values, so logging it leaks neither key nor customer id.
+        assertThatThrownBy(() -> tickets.save(keyedTicket(customer, key)))
+                .isInstanceOf(DuplicateIdempotencyKeyException.class)
+                .rootCause()
+                .hasMessageContaining(JpaTicketRepository.IDEMPOTENCY_KEY_CONSTRAINT)
+                .hasMessageNotContaining(key)
+                .hasMessageNotContaining(customer.toString());
+        assertThat(jdbc.queryForObject("select count(*) from tickets where customer_id = ?", Integer.class, customer))
+                .isOne();
+        assertThat(tickets.findByIdempotencyKey(customer, new IdempotencyKey(key)))
+                .map(Ticket::getId)
+                .contains(first.getId());
+    }
+
+    @Test
+    void twoCustomersMayUseTheSameKey() {
+        String key = "key-" + UUID.randomUUID();
+
+        tickets.save(keyedTicket(UUID.randomUUID(), key));
+        tickets.save(keyedTicket(UUID.randomUUID(), key));
+
+        assertThat(jdbc.queryForObject("select count(*) from tickets where idempotency_key = ?", Integer.class, key))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void otherIntegrityViolationsAreNotTranslated() {
+        Ticket submitted = keyedTicket(UUID.randomUUID(), "key-" + UUID.randomUUID());
+        tickets.save(submitted);
+
+        // Same id (and same key): the primary key is checked first, and it is not the idempotency constraint.
+        assertThatThrownBy(() -> tickets.save(submitted))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .isNotInstanceOf(DuplicateIdempotencyKeyException.class);
+    }
+
+    @Test
+    void checkConstraintRequiresKeyAndFingerprintTogether() {
+        String insert = "insert into tickets (id, customer_id, subject, body, status, created_at, version,"
+                + " idempotency_key, request_fingerprint) values (?, ?, 'S', 'B', 'NEW', now(), 0, ?, ?)";
+
+        assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), UUID.randomUUID(), "key", null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("tickets_idempotency_pair_check");
+        assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), UUID.randomUUID(), null, "a".repeat(64)))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("tickets_idempotency_pair_check");
+    }
+
+    @Test
+    void ticketsWithoutKeyDoNotCollide() {
+        UUID customer = UUID.randomUUID();
+
+        tickets.save(Ticket.submit(customer, "Subject", "Body", CLOCK));
+        tickets.save(Ticket.submit(customer, "Subject", "Body", CLOCK));
+
+        assertThat(jdbc.queryForObject("select count(*) from tickets where customer_id = ?", Integer.class, customer))
+                .isEqualTo(2);
     }
 
     private UUID insertRow(String subject, String status) {

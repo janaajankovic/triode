@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,9 +19,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import dev.triode.shared.api.CurrentCustomer;
+import dev.triode.tickets.api.SubmittedTicket;
 import dev.triode.tickets.api.TicketLookup;
 import dev.triode.tickets.api.TicketSubmission;
 import dev.triode.tickets.api.TicketView;
+import dev.triode.tickets.domain.IdempotencyKey;
+import dev.triode.tickets.domain.IdempotencyKeyReusedException;
 import dev.triode.tickets.domain.InvalidStatusTransitionException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
@@ -72,11 +76,21 @@ class TicketControllerTest {
     @MockitoBean
     private TicketLookup lookup;
 
+    /** Creates through the domain, so subject, body and key validation are the production rules. */
     @BeforeEach
     void submitThroughTheDomain() {
-        when(submission.submit(any(), any(), any()))
-                .thenAnswer(call -> TicketViews.of(
-                        Ticket.submit(call.getArgument(0), call.getArgument(1), call.getArgument(2), CLOCK)));
+        when(submission.submit(any(), any(), any(), any())).thenAnswer(call -> {
+            String key = call.getArgument(3);
+            Ticket ticket = key == null
+                    ? Ticket.submit(call.getArgument(0), call.getArgument(1), call.getArgument(2), CLOCK)
+                    : Ticket.submit(
+                            call.getArgument(0),
+                            call.getArgument(1),
+                            call.getArgument(2),
+                            new IdempotencyKey(key),
+                            CLOCK);
+            return SubmittedTicket.created(TicketViews.of(ticket));
+        });
     }
 
     private ResultActions postTicket(String json) throws Exception {
@@ -105,6 +119,7 @@ class TicketControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
                 .andExpect(jsonPath("$.subject").value("Cannot log in"))
                 .andExpect(jsonPath("$.body").value("The login page shows an error."))
                 .andExpect(jsonPath("$.status").value("NEW"))
@@ -114,7 +129,7 @@ class TicketControllerTest {
         String id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
         assertThat(UUID.fromString(id)).hasToString(id);
         assertThat(result.getResponse().getHeader("Location")).isEqualTo("/api/v1/tickets/" + id);
-        verify(submission).submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.");
+        verify(submission).submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", null);
     }
 
     @Test
@@ -248,12 +263,86 @@ class TicketControllerTest {
         postTicket(json).andExpect(status().isCreated());
     }
 
+    // --- Idempotency-Key ---
+
+    private ResultActions postTicketWithKey(String json, String key) throws Exception {
+        return mvc.perform(post("/api/v1/tickets")
+                .header("X-Customer-Id", CUSTOMER)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
+    }
+
+    @Test
+    void firstSubmissionWithKeyIs201AndPassesTheKeyOn() throws Exception {
+        MvcResult result = postTicketWithKey(VALID_BODY, "retry-key-1")
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replayed"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andReturn();
+
+        String id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+        assertThat(result.getResponse().getHeader("Location")).isEqualTo("/api/v1/tickets/" + id);
+        verify(submission)
+                .submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", "retry-key-1");
+    }
+
+    @Test
+    void replayIs200WithTheOriginalTicketLocationAndReplayHeader() throws Exception {
+        TicketView original = TicketViews.of(
+                Ticket.submit(UUID.fromString(CUSTOMER), "Cannot log in", "The login page shows an error.", CLOCK));
+        doReturn(SubmittedTicket.replayed(original)).when(submission).submit(any(), any(), any(), any());
+
+        postTicketWithKey(VALID_BODY, "retry-key-1")
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(header().string("Idempotent-Replayed", "true"))
+                .andExpect(header().string("Location", "/api/v1/tickets/" + original.id()))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.id").value(original.id().toString()))
+                .andExpect(jsonPath("$.subject").value("Cannot log in"))
+                .andExpect(jsonPath("$.status").value("NEW"));
+    }
+
+    @Test
+    void keyReusedForDifferentContentIs422WithoutEchoingTheKey() throws Exception {
+        doThrow(new IdempotencyKeyReusedException()).when(submission).submit(any(), any(), any(), any());
+
+        expectProblem(postTicketWithKey(VALID_BODY, "retry-key-1"), 422)
+                .andExpect(jsonPath("$.detail").value("Idempotency-Key was already used for a different request"))
+                .andExpect(jsonPath("$.errors['Idempotency-Key']").value("was already used for a different request"))
+                .andExpect(content().string(not(containsString("retry-key-1"))))
+                .andExpect(content().string(not(containsString("Cannot log in"))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "key\u0001with-control", "schlüssel", "key\u007F"})
+    void malformedKeyIs400WithoutEchoingIt(String key) throws Exception {
+        ResultActions result = expectProblem(postTicketWithKey(VALID_BODY, key), 400)
+                .andExpect(jsonPath("$.errors['Idempotency-Key']").value("must be 1 to 255 printable ASCII characters"))
+                .andExpect(jsonPath("$.detail")
+                        .value("Invalid ticket Idempotency-Key: must be 1 to 255 printable ASCII characters"));
+        if (!key.isEmpty()) {
+            result.andExpect(content().string(not(containsString(key))));
+        }
+    }
+
+    @Test
+    void keyOver255CharactersIs400() throws Exception {
+        String key = "k".repeat(IdempotencyKey.MAX_LENGTH + 1);
+
+        expectProblem(postTicketWithKey(VALID_BODY, key), 400)
+                .andExpect(jsonPath("$.errors['Idempotency-Key']").value("must be 1 to 255 printable ASCII characters"))
+                .andExpect(content().string(not(containsString(key))));
+        postTicketWithKey(VALID_BODY, "k".repeat(IdempotencyKey.MAX_LENGTH)).andExpect(status().isCreated());
+    }
+
     @Test
     void conflictDomainExceptionIs409() throws Exception {
         TicketId id = TicketId.generate();
         doThrow(new InvalidStatusTransitionException(id, TicketStatus.RESOLVED, TicketStatus.TRIAGING))
                 .when(submission)
-                .submit(any(), any(), any());
+                .submit(any(), any(), any(), any());
 
         expectProblem(postTicket(VALID_BODY), 409)
                 .andExpect(jsonPath("$.detail")
@@ -264,7 +353,7 @@ class TicketControllerTest {
     void unexpectedExceptionIs500WithoutInternals() throws Exception {
         doThrow(new IllegalStateException("stored ticket 42 is invalid: secret internals"))
                 .when(submission)
-                .submit(any(), any(), any());
+                .submit(any(), any(), any(), any());
 
         expectProblem(postTicket(VALID_BODY), 500)
                 .andExpect(jsonPath("$.detail").value("An unexpected error occurred"))

@@ -193,13 +193,13 @@ class TicketTest {
         private static final String NULL = "must not be null";
 
         private static Ticket stored(String subject, String body) {
-            return Ticket.reconstitute(ID, CUSTOMER, subject, body, TicketStatus.NEW, STORED_AT, VERSION);
+            return Ticket.reconstitute(ID, CUSTOMER, subject, body, TicketStatus.NEW, STORED_AT, VERSION, null, null);
         }
 
         @ParameterizedTest
         @EnumSource(TicketStatus.class)
         void rebuildsTicketInEveryStatus(TicketStatus status) {
-            Ticket ticket = Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, status, STORED_AT, VERSION);
+            Ticket ticket = Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, status, STORED_AT, VERSION, null, null);
 
             assertThat(ticket.getId()).isEqualTo(ID);
             assertThat(ticket.getCustomerId()).isEqualTo(CUSTOMER);
@@ -212,10 +212,10 @@ class TicketTest {
 
         @Test
         void reconstitutedTicketKeepsTransitionRules() {
-            Ticket resolved =
-                    Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.RESOLVED, STORED_AT, VERSION);
-            Ticket pending =
-                    Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.PENDING_REVIEW, STORED_AT, VERSION);
+            Ticket resolved = Ticket.reconstitute(
+                    ID, CUSTOMER, SUBJECT, BODY, TicketStatus.RESOLVED, STORED_AT, VERSION, null, null);
+            Ticket pending = Ticket.reconstitute(
+                    ID, CUSTOMER, SUBJECT, BODY, TicketStatus.PENDING_REVIEW, STORED_AT, VERSION, null, null);
 
             assertThatThrownBy(resolved::escalate).isInstanceOf(InvalidStatusTransitionException.class);
             pending.resolve();
@@ -226,7 +226,8 @@ class TicketTest {
         void changesNoValue() {
             Instant withNanos = Instant.parse("2026-11-17T10:00:00.123456789Z");
 
-            Ticket ticket = Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.NEW, withNanos, 0L);
+            Ticket ticket =
+                    Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, TicketStatus.NEW, withNanos, 0L, null, null);
 
             assertThat(ticket.getCreatedAt()).isEqualTo(withNanos);
             assertThat(ticket.getVersion()).isZero();
@@ -235,12 +236,22 @@ class TicketTest {
         @Test
         void rejectsNullValues() {
             TicketStatus s = TicketStatus.NEW;
-            assertInvalid(() -> Ticket.reconstitute(null, CUSTOMER, SUBJECT, BODY, s, STORED_AT, 0), "id", NULL);
-            assertInvalid(() -> Ticket.reconstitute(ID, null, SUBJECT, BODY, s, STORED_AT, 0), "customerId", NULL);
-            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, null, BODY, s, STORED_AT, 0), "subject", NULL);
-            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, null, s, STORED_AT, 0), "body", NULL);
-            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, null, STORED_AT, 0), "status", NULL);
-            assertInvalid(() -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, s, null, 0), "createdAt", NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(null, CUSTOMER, SUBJECT, BODY, s, STORED_AT, 0, null, null), "id", NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(ID, null, SUBJECT, BODY, s, STORED_AT, 0, null, null),
+                    "customerId",
+                    NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(ID, CUSTOMER, null, BODY, s, STORED_AT, 0, null, null), "subject", NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, null, s, STORED_AT, 0, null, null), "body", NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, null, STORED_AT, 0, null, null),
+                    "status",
+                    NULL);
+            assertInvalid(
+                    () -> Ticket.reconstitute(ID, CUSTOMER, SUBJECT, BODY, s, null, 0, null, null), "createdAt", NULL);
         }
 
         @ParameterizedTest
