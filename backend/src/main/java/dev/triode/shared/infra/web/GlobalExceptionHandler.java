@@ -57,6 +57,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             case INVALID_INPUT -> HttpStatus.BAD_REQUEST;
             case CONFLICT -> HttpStatus.CONFLICT;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case UNPROCESSABLE -> HttpStatus.UNPROCESSABLE_CONTENT;
         };
         // Domain messages are client-safe by contract (see DomainException); the class name is enough for logs.
         log.debug("Domain rule broken: {} ({})", e.getClass().getSimpleName(), e.kind());

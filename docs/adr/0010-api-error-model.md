@@ -9,12 +9,12 @@ The engineering standards require RFC 9457 problem details from one global excep
 
 ## Decision
 
-- `shared.api.DomainException` (pure Java) is the base of every business exception. It carries a **kind**: `INVALID_INPUT`, `CONFLICT` or `NOT_FOUND`, and optional **details** (field → reason). Its message and details are client-visible and must never contain customer text.
+- `shared.api.DomainException` (pure Java) is the base of every business exception. It carries a **kind**: `INVALID_INPUT`, `CONFLICT`, `NOT_FOUND` or `UNPROCESSABLE` (added in TRI-18: well-formed but cannot be processed as sent, e.g. an `Idempotency-Key` reused for a different request), and optional **details** (field → reason). Its message and details are client-visible and must never contain customer text.
 - One `@RestControllerAdvice` in `shared.infra.web` maps by kind, not by class. It extends Spring's `ResponseEntityExceptionHandler`, so Spring MVC's own errors (405, 415, unknown route, unreadable body) keep their correct status.
 
 | Source | Status | `errors` extension |
 |---|---|---|
-| `DomainException` `INVALID_INPUT` / `CONFLICT` / `NOT_FOUND` | 400 / 409 / 404 | `details()` |
+| `DomainException` `INVALID_INPUT` / `CONFLICT` / `NOT_FOUND` / `UNPROCESSABLE` | 400 / 409 / 404 / 422 | `details()` |
 | Missing or non-UUID `X-Customer-Id` (temporary, until Sprint 4) | 400 | `{"X-Customer-Id": reason}` |
 | Malformed JSON, wrong types | 400 | — (parser message not exposed) |
 | Unknown JSON property | 400 | `{"<name>": "unknown property"}` if the name matches `^[A-Za-z][A-Za-z0-9_]{0,63}$`, otherwise none (client input is not echoed) |
@@ -29,6 +29,6 @@ The engineering standards require RFC 9457 problem details from one global excep
 ## Consequences
 
 - New modules get correct HTTP errors by choosing a kind; the handler never changes for a new exception class.
-- Only three kinds exist. A case that fits none of them (e.g. "forbidden" once authentication exists) needs a new kind and a line in this table, and every module sees it.
+- Only four kinds exist (`UNPROCESSABLE` was the first addition, in TRI-18). A case that fits none of them (e.g. "forbidden" once authentication exists) needs a new kind and a line in this table, and every module sees it.
 - Kinds are coarse: two different conflicts both become 409 with only the message to tell them apart. If clients need to branch on the cause, we add a stable problem `type` URI per exception later.
 - Domain messages become part of the API contract and must stay free of personal data; the review checks this.

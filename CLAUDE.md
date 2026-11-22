@@ -20,7 +20,8 @@ Triode is an AI-assisted support ticket triage service (portfolio project). Read
   re-adds it together with a migration for `event_publication`.
 - Every LLM call goes through `LlmGateway`. Prompts live in versioned files in `resources/prompts` (e.g. `classify.v1.st`).
 - Errors are RFC 9457 problem details from one global exception handler (`shared.infra.web.GlobalExceptionHandler`, ADR 0010).
-  Business exceptions extend `shared.api.DomainException` and pick a kind (INVALID_INPUT/CONFLICT/NOT_FOUND → 400/409/404);
+  Business exceptions extend `shared.api.DomainException` and pick a kind
+  (INVALID_INPUT/CONFLICT/NOT_FOUND/UNPROCESSABLE → 400/409/404/422);
   never add a per-class mapping to the handler. Their messages are sent to clients: no customer text in them.
 - Request validation lives only in the domain: no Bean Validation on request records; document limits with `@Schema`
   using the domain constants.

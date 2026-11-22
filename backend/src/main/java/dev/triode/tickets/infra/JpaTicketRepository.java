@@ -1,12 +1,18 @@
 package dev.triode.tickets.infra;
 
+import dev.triode.tickets.domain.DuplicateIdempotencyKeyException;
+import dev.triode.tickets.domain.IdempotencyKey;
 import dev.triode.tickets.domain.InvalidTicketException;
+import dev.triode.tickets.domain.RequestFingerprint;
 import dev.triode.tickets.domain.StaleTicketException;
 import dev.triode.tickets.domain.Ticket;
 import dev.triode.tickets.domain.TicketId;
 import dev.triode.tickets.domain.TicketRepository;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,10 +25,16 @@ import org.springframework.transaction.annotation.Transactional;
  * a concurrent commit between that check and the flush; Spring's {@link OptimisticLockingFailureException} from that
  * update is translated. Either way a stale ticket raises {@link StaleTicketException} and never overwrites the newer
  * row.
+ *
+ * <p>Idempotency: the unique constraint {@value #IDEMPOTENCY_KEY_CONSTRAINT} (V3 migration) on
+ * {@code (customer_id, idempotency_key)} decides between concurrent submissions with the same key. A violation of
+ * exactly that constraint, matched by name, becomes {@link DuplicateIdempotencyKeyException}.
  */
 @Repository
 @Transactional
 class JpaTicketRepository implements TicketRepository {
+
+    static final String IDEMPOTENCY_KEY_CONSTRAINT = "tickets_customer_idempotency_key_uk";
 
     private final TicketJpaRepository jpa;
 
@@ -39,7 +51,23 @@ class JpaTicketRepository implements TicketRepository {
             return toDomain(jpa.saveAndFlush(entity));
         } catch (OptimisticLockingFailureException e) {
             throw new StaleTicketException(ticket.getId(), e);
+        } catch (DataIntegrityViolationException e) {
+            // Only the idempotency constraint means "another submission with this key won"; any other violation
+            // (duplicate id, CHECK) is a bug and stays a DataIntegrityViolationException.
+            if (violates(e, IDEMPOTENCY_KEY_CONSTRAINT)) {
+                throw new DuplicateIdempotencyKeyException(e);
+            }
+            throw e;
         }
+    }
+
+    private static boolean violates(DataIntegrityViolationException e, String constraint) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return constraint.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     private static TicketEntity newEntity(Ticket ticket) {
@@ -50,7 +78,9 @@ class JpaTicketRepository implements TicketRepository {
                 ticket.getSubject(),
                 ticket.getBody(),
                 ticket.getStatus(),
-                ticket.getCreatedAt());
+                ticket.getCreatedAt(),
+                ticket.getIdempotencyKey().map(IdempotencyKey::value).orElse(null),
+                ticket.getRequestFingerprint().map(RequestFingerprint::value).orElse(null));
     }
 
     private TicketEntity updatedEntity(Ticket ticket) {
@@ -72,6 +102,14 @@ class JpaTicketRepository implements TicketRepository {
         return jpa.findById(id.value()).map(JpaTicketRepository::toDomain);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Ticket> findByIdempotencyKey(UUID customerId, IdempotencyKey key) {
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        Objects.requireNonNull(key, "key must not be null");
+        return jpa.findByCustomerIdAndIdempotencyKey(customerId, key.value()).map(JpaTicketRepository::toDomain);
+    }
+
     /**
      * Invalid stored data is our fault, not the caller's: the domain's {@link InvalidTicketException} (a client
      * error) is wrapped in an {@link IllegalStateException}, which the API reports as a 500. {@code @Repository}
@@ -86,7 +124,11 @@ class JpaTicketRepository implements TicketRepository {
                     entity.getBody(),
                     entity.getStatus(),
                     entity.getCreatedAt(),
-                    entity.getVersion());
+                    entity.getVersion(),
+                    entity.getIdempotencyKey() == null ? null : new IdempotencyKey(entity.getIdempotencyKey()),
+                    entity.getRequestFingerprint() == null
+                            ? null
+                            : new RequestFingerprint(entity.getRequestFingerprint()));
         } catch (InvalidTicketException e) {
             throw new IllegalStateException("stored ticket " + entity.getId() + " is invalid", e);
         }

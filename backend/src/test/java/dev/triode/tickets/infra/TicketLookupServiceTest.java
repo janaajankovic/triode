@@ -29,7 +29,15 @@ class TicketLookupServiceTest {
 
     private static Ticket storedTicket() {
         return Ticket.reconstitute(
-                ID, OWNER, "Cannot log in", "The login page shows an error.", TicketStatus.TRIAGING, CREATED, 3L);
+                ID,
+                OWNER,
+                "Cannot log in",
+                "The login page shows an error.",
+                TicketStatus.TRIAGING,
+                CREATED,
+                3L,
+                null,
+                null);
     }
 
     @Test

@@ -58,6 +58,26 @@ class TicketDomainExceptionSerializationTest {
         assertThat(copy).hasMessage("Ticket " + ID + " not found");
     }
 
+    @Test
+    void idempotencyKeyReusedExceptionIsUnprocessableWithoutTheKey() throws Exception {
+        IdempotencyKeyReusedException copy = roundTrip(new IdempotencyKeyReusedException());
+
+        assertThat(copy.kind()).isEqualTo(DomainException.Kind.UNPROCESSABLE);
+        assertThat(copy).hasMessage("Idempotency-Key was already used for a different request");
+        assertThat(copy.details())
+                .containsExactly(Map.entry("Idempotency-Key", "was already used for a different request"));
+    }
+
+    @Test
+    void duplicateIdempotencyKeyExceptionKeepsItsCauseAndIsNoDomainException() throws Exception {
+        IllegalStateException cause = new IllegalStateException("constraint violated");
+
+        DuplicateIdempotencyKeyException copy = roundTrip(new DuplicateIdempotencyKeyException(cause));
+
+        assertThat(copy).isNotInstanceOf(DomainException.class).hasCauseInstanceOf(IllegalStateException.class);
+        assertThat(copy).hasMessage("Another ticket of this customer already has this idempotency key");
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T roundTrip(T value) throws IOException, ClassNotFoundException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

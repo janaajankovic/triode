@@ -1,6 +1,7 @@
 package dev.triode.tickets.domain;
 
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Port for storing tickets. The domain defines what it needs; the persistence adapter in the module's infra package
@@ -17,8 +18,20 @@ public interface TicketRepository {
      *
      * @throws StaleTicketException if the stored ticket was changed since this one was loaded (its version is stale)
      *     or no longer exists; the newer state is never overwritten
+     * @throws DuplicateIdempotencyKeyException if the new ticket's customer already has a ticket with its idempotency
+     *     key (the storage's uniqueness rule decides, also between concurrent saves); the current transaction is then
+     *     unusable, so the stored ticket must be loaded in a new one
      */
     Ticket save(Ticket ticket);
+
+    /**
+     * Loads the customer's ticket that was submitted with this idempotency key. Keys are scoped per customer, so
+     * another customer's ticket with the same key is never returned.
+     *
+     * @throws RuntimeException (not a {@link TicketDomainException}) if the stored data is invalid, as for
+     *     {@link #findById(TicketId)}
+     */
+    Optional<Ticket> findByIdempotencyKey(UUID customerId, IdempotencyKey key);
 
     /**
      * Loads a ticket by id.
